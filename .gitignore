@@ -1,0 +1,5 @@
+/.idea/
+/registry.iml
+/registry-server/registry-server.iml
+/registry-javaclient/registry-javaclient.iml
+/registry-common/registry-common.iml
