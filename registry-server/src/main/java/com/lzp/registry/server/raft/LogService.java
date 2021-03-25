@@ -93,16 +93,17 @@ public class LogService {
 
 
     /**
-     * 更新当前raftnode的term
+     * 更新当前raftnode的term并返回更新后的值
      */
     public static long increaseCurrentTerm(long currentTerm) {
+        long newTerm = ++currentTerm;
         try (BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(new FileOutputStream("./persistence/term.txt"))) {
-            long newTerm = ++currentTerm;
             bufferedOutputStream.write(Long.toString(newTerm).getBytes());
             bufferedOutputStream.flush();
             return newTerm;
         } catch (IOException e) {
-            LOGGER.error("generate snapshot error", e);
+            LOGGER.error(e.getMessage(), e);
+            return increaseCurrentTerm(currentTerm);
         }
     }
 

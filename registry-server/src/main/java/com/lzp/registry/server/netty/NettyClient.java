@@ -13,7 +13,6 @@ import io.netty.handler.timeout.IdleStateHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.ConnectException;
 
 /**
  * Description:nettyclient
@@ -48,23 +47,57 @@ public class NettyClient implements AutoCloseable {
      * @author: Lu ZePing
      * @date: 2020/9/27 18:32
      */
-    public static Channel getChannelAndRequestToVote(String ip, int port, long term, long index) {
+    public static Channel getChannelAndRequestForVote(String ip, int port, long term, long index) {
         try {
             Channel channel = bootstrap.connect(ip, port).sync().channel();
             channel.writeAndFlush(RaftNode.getCommandId() + Cons.COMMAND_SEPARATOR + "reqforvote" + Cons
                     .COMMAND_SEPARATOR + term + Cons.COMMAND_SEPARATOR + index);
             return channel;
         } catch (Exception e) {
-            if (e instanceof ConnectException) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException ex) {
+                LOGGER.error(e.getMessage(), e);
+            }
+            if (RaftNode.getTerm() != term) {
+                return null;
+            } else if (Cons.LEADER.equals(RaftNode.getRole())) {
+                return getChannelAndCheckSync(ip, port, term, index);
+            } else if (Cons.CANDIDATE.equals(RaftNode.getRole())) {
+                return getChannelAndRequestForVote(ip, port, term, index);
+            }
+        }
+    }
+
+
+    /**
+     * Description:
+     * 本节点已经被选举为主节点了,但是还有少数从节点处于失连状态
+     * 则需要不断重连,并且在连接成功后发起日志同步请求(如果不一致的话)
+     *
+     * @author: Lu ZePing
+     * @date: 2020/9/27 18:32
+     */
+    public static Channel getChannelAndCheckSync(String ip, int port, long term, long index) {
+        try {
+            Channel channel = bootstrap.connect(ip, port).sync().channel();
+            channel.writeAndFlush(RaftNode.getCommandId() + Cons.COMMAND_SEPARATOR + "reqforsync" + Cons
+                    .COMMAND_SEPARATOR + term + Cons.COMMAND_SEPARATOR + index);
+            return channel;
+        } catch (Exception e) {
+            if (Cons.LEADER.equals(RaftNode.getRole())) {
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException ex) {
-                    ex.printStackTrace();
+                    LOGGER.error(e.getMessage(),e);
                 }
+                return getChannelAndCheckSync(ip, port, term, index);
             }
-            return getChannelAndRequestToVote(ip, port, term, index);
+            return null;
         }
     }
+
+
 
     @Override
     public void close() {

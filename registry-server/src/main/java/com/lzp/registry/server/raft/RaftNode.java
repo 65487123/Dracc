@@ -22,8 +22,15 @@ import com.lzp.registry.common.util.ThreadFactoryImpl;
 import com.lzp.registry.server.netty.NettyClient;
 import com.lzp.registry.server.netty.NettyServer;
 import com.lzp.registry.server.util.CountDownLatch;
+import com.sun.jndi.ldap.Connection;
 import io.netty.channel.Channel;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import javax.management.relation.Role;
+import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -36,6 +43,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class RaftNode {
 
+    /**
+     * 延迟任务
+     */
     private static class DelayTask implements Delayed,Runnable{
 
         Runnable runnable;
@@ -64,6 +74,45 @@ public class RaftNode {
     }
 
     /**
+     * 重写equals方法以便放入set中
+     */
+    private static class Connection {
+        private Channel channel;
+
+        Connection(Channel channel) {
+            this.channel = channel;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (o instanceof Connection) {
+                Connection connection = (Connection) o;
+                InetSocketAddress inetSocketAddress = (InetSocketAddress) this.channel.remoteAddress();
+                InetSocketAddress inetSocketAddress1 = (InetSocketAddress) connection.channel.remoteAddress();
+                return getIp(inetSocketAddress).equals(getIp(inetSocketAddress1))
+                        && getPort(inetSocketAddress) == getPort(inetSocketAddress1);
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return 1;
+        }
+
+        private String getIp(InetSocketAddress inetSocketAddress) {
+            return inetSocketAddress.getAddress().getHostAddress();
+        }
+
+        private int getPort(InetSocketAddress inetSocketAddress) {
+            return inetSocketAddress.getPort();
+        }
+    }
+
+    private final static Logger LOGGER = LoggerFactory.getLogger(RaftNode.class);
+
+    /**
      * 真正的数据(状态机)
      */
     private static Map<String, Set<String>> data = new HashMap<>();
@@ -85,6 +134,11 @@ public class RaftNode {
     private static ExecutorService timeoutToElectionExecutor;
 
     /**
+     * 执行心跳任务的线程池
+     */
+    private static ExecutorService heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("heatbeat"));
+
+    /**
      * 超时选举任务
      */
     private static DelayTask electionTask;
@@ -92,7 +146,7 @@ public class RaftNode {
     /**
      * 主节点才有值
      */
-    private static List<Channel> slaveChannels;
+    private static Set<Connection> slaveChannels = new CopyOnWriteArraySet();
 
     /**
      * 半数
@@ -123,39 +177,115 @@ public class RaftNode {
         timeoutToElectionExecutor.execute(electionTask);
     }
 
-
+    /**
+     * 发起选举
+     */
     private static void startElection(String[] remoteNodeIps) {
         role = Cons.CANDIDATE;
         String voteRequestId = getCommandId();
-        cidAndResultMap.put(voteRequestId, new CountDownLatch(halfCount));
+        CountDownLatch countDownLatch = new CountDownLatch(halfCount);
+        cidAndResultMap.put(voteRequestId, countDownLatch);
         ExecutorService threadPoolExecutor = new ThreadPoolExecutor(remoteNodeIps.length, remoteNodeIps.length, 0,
-                TimeUnit.SECONDS, new LinkedBlockingQueue<>(),
-                new ThreadFactoryImpl("ask for vote"));
-        for (int i = 0; i < remoteNodeIps.length; i++) {
-            String[] ipAndPort = remoteNodeIps[i].split(Cons.COLON);
-            NettyClient.getChannelAndRequestToVote(ipAndPort[0], Integer.parseInt(ipAndPort[1]), term = LogService.increaseCurrentTerm(term), LogService.getLogIndex());
+                TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("ask for vote"));
+        for (String remoteNodeIp : remoteNodeIps) {
+            String[] ipAndPort = remoteNodeIp.split(Cons.COLON);
+            threadPoolExecutor.execute(() -> {
+                Channel channel = NettyClient.getChannelAndRequestForVote(ipAndPort[0], Integer
+                        .parseInt(ipAndPort[1]), term = LogService.increaseCurrentTerm(term), LogService.getLogIndex());
+                if (channel != null) {
+                    if (slaveChannels.add(new Connection(channel))) {
+                        addListenerOnChannel(channel);
+                    } else {
+                        channel.close();
+                    }
+                }
+            });
+        }
+        try {
+            if (countDownLatch.await(ThreadLocalRandom.current().nextLong(3000, 5000), TimeUnit.MILLISECONDS)) {
+                upgradToLeader();
+            }
+        } catch (InterruptedException e) {
+            LOGGER.info("Interrupted while waiting for vote", e);
         }
 
     }
 
+    /**
+     * 升级成主节点
+     */
+    private static void upgradToLeader() {
+        role = Cons.LEADER;
+        heartBeatExecutor.execute(() -> {
+            while (true) {
+                byte[] emptyPackage = new byte[0];
+                for (Connection connection : slaveChannels) {
+                    connection.channel.writeAndFlush(emptyPackage);
+                }
+            }
+        });
+    }
+
+    /**
+     * 监听channel,当channel关闭后,根据具体情况选择是否重连
+     */
+    private static void addListenerOnChannel(Channel channel) {
+        channel.closeFuture().addListener(future -> {
+            slaveChannels.remove(new Connection(channel));
+            if (Cons.LEADER.equals(RaftNode.getRole())) {
+                InetSocketAddress inetSocketAddress = (InetSocketAddress) channel.remoteAddress();
+                Channel newChannel = NettyClient.getChannelAndCheckSync(inetSocketAddress.getAddress()
+                        .getHostAddress(), inetSocketAddress.getPort(), term, LogService.getLogIndex());
+                if (newChannel != null) {
+                    if (slaveChannels.add(new Connection(newChannel))){
+                        addListenerOnChannel(newChannel);
+                    }else {
+                        newChannel.close();
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * 获取当前角色
+     */
     public static String getRole() {
         return role;
     }
 
+    /**
+     * 设置当前角色
+     */
     public static void setRole(String newRole) {
         role = newRole;
     }
 
+    /**
+     * 重置计时器
+     */
     public static void ResetTimer() {
         electionTask.deadline = System.currentTimeMillis() + electionTask.delay;
     }
 
+    /**
+     * 获取命令唯一id
+     */
     public static String getCommandId() {
         return Integer.toString(commandIdCunter.getAndIncrement());
     }
 
+    /**
+     * 获取命令id以及相应结果map
+     */
     public static Map<String, CountDownLatch> getCidAndResultMap() {
         return cidAndResultMap;
     }
 
+    /**
+     * 获取当前任期
+     */
+    public static long getTerm(){
+        return term;
+    }
 }
