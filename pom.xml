@@ -3,6 +3,24 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+    <groupId>com.lzp.registry</groupId>
+    <artifactId>registry-parent</artifactId>
+    <version>1.0</version>
+
+    <description>Distributed registry, based on raft</description>
+    <developers>
+        <developer>
+            <name>luzeping</name>
+            <email>zeping_lu@163.com</email>
+        </developer>
+    </developers>
+    <licenses>
+        <license>
+            <name>The Apache Software License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+        </license>
+    </licenses>
+
 
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -28,9 +46,6 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
-    <groupId>com.lzp.registry</groupId>
-    <artifactId>registry-parent</artifactId>
-    <version>1.0</version>
     <modules>
         <module>registry-server</module>
         <module>registry-javaclient</module>

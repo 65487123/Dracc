@@ -22,14 +22,10 @@ import com.lzp.registry.common.util.ThreadFactoryImpl;
 import com.lzp.registry.server.netty.NettyClient;
 import com.lzp.registry.server.netty.NettyServer;
 import com.lzp.registry.server.util.CountDownLatch;
-import com.sun.jndi.ldap.Connection;
 import io.netty.channel.Channel;
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.GenericFutureListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.management.relation.Role;
 import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.*;
@@ -119,7 +115,7 @@ public class RaftNode {
     /**
      * key是commandid,value是这个command向从节点发送以后收到的结果(是否半数成功)
      */
-    private static Map<String, CountDownLatch> cidAndResultMap = new HashMap<>();
+    private static Map<String, CountDownLatch> cidAndResultMap = new ConcurrentHashMap<>();
 
     /**
      * id计数器
@@ -132,14 +128,15 @@ public class RaftNode {
         termAndSlaveChannels.put(currentTerm, new CopyOnWriteArrayList<>());
         term = Long.parseLong(currentTerm);
         Properties clusterProperties = PropertyUtil.getProperties(Cons.CLU_PRO);
-        String[] remoteNodeIps = clusterProperties.getProperty("remoteRaftNodes").split(",");
+        String[] remoteNodeIps = clusterProperties.getProperty("remoteRaftNodes").split(Cons.COMMA);
         halfCount = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
         role = Cons.FOLLOWER;
         String[] localIpAndPort = clusterProperties.getProperty("localRaftNode").split(Cons.COLON);
         NettyServer.start(localIpAndPort[0], Integer.parseInt(localIpAndPort[1]));
         timeoutToElectionExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new DelayQueue(),
                 new ThreadFactoryImpl("timeout to election"));
-        timeoutToElectionExecutor.execute(() -> {});
+        timeoutToElectionExecutor.execute(() -> {
+        });
         electionTask = new DelayTask(() -> startElection(remoteNodeIps), ThreadLocalRandom.current().nextInt(12000, 18000));
         timeoutToElectionExecutor.execute(electionTask);
     }
@@ -160,7 +157,7 @@ public class RaftNode {
             threadPoolExecutor.execute(() -> sendRpcAndSaveChannel(term, voteRequestId, ipAndPort[0], ipAndPort[1]));
         }
         try {
-            if (countDownLatch.await(ThreadLocalRandom.current().nextLong(3000, 5000), TimeUnit.MILLISECONDS)) {
+            if (countDownLatch.await(ThreadLocalRandom.current().nextLong(3500, 5000), TimeUnit.MILLISECONDS)) {
                 upgradToLeader(Long.toString(term));
             } else {
                 startElection(remoteNodeIps);
@@ -186,7 +183,7 @@ public class RaftNode {
     }
 
     /**
-     * 断开旧连接并从容器中移除,增加装新连接的容器
+     * 断开旧连接并从容器中移除,增加装新连接的容器,发起选举时会执行此方法
      */
     private static void updateTermAndSlaveChannels() {
         List<Channel> oldChannels = termAndSlaveChannels.remove(Long.toString(term));
@@ -218,11 +215,19 @@ public class RaftNode {
     }
 
     /**
-     * 降级为从节点
+     * 当主节点收到更高任期的心跳时(网络分区恢复后)或者候选者发现已经有leader了(收到心跳),
+     * 会执行此方法,降级为从节点
      */
-    public static void downgradeToSlaveNode() {
-        heartBeatExecutor.shutdownNow();
+    public static void downgradeToSlaveNode(long preTerm) {
+        List<Channel> oldChannels = termAndSlaveChannels.remove(Long.toString(preTerm));
+        for (Channel channel : oldChannels) {
+            channel.close();
+        }
         role = Cons.FOLLOWER;
+        heartBeatExecutor.shutdownNow();
+        electionTask = new DelayTask(() -> startElection(PropertyUtil.getProperties(Cons.CLU_PRO)
+                .getProperty("localRaftNode").split(Cons.COLON)), ThreadLocalRandom.current().nextInt(12000, 18000));
+        timeoutToElectionExecutor.execute(electionTask);
     }
 
     /**
@@ -283,7 +288,25 @@ public class RaftNode {
     /**
      * 获取当前任期
      */
-    public static long getTerm(){
+    public static long getTerm() {
         return term;
     }
+
+    /**
+     * 增长当前任期
+     */
+    public static void increaseTerm() {
+        term = LogService.increaseCurrentTerm(term);
+    }
+
+    /**
+     * 更新当前任期
+     * @return 原本的任期
+     */
+    public static long updateTerm(long term) {
+        long preTerm = RaftNode.term;
+        RaftNode.term = term;
+        return preTerm;
+    }
+
 }

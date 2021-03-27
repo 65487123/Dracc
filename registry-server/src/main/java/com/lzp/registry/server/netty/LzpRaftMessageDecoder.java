@@ -16,6 +16,7 @@
 package com.lzp.registry.server.netty;
 
  import com.lzp.registry.common.constant.Cons;
+ import com.lzp.registry.server.raft.LogService;
  import com.lzp.registry.server.raft.RaftNode;
  import io.netty.buffer.ByteBuf;
  import io.netty.channel.ChannelHandlerContext;
@@ -42,11 +43,9 @@ package com.lzp.registry.server.netty;
                  channelHandlerContext.channel().writeAndFlush(new byte[0]);
                  if (Cons.FOLLOWER.equals(RaftNode.getRole())) {
                      RaftNode.ResetTimer();
-                 } else if (Cons.LEADER.equals(RaftNode.getRole())) {
-                     //脑裂恢复的情况
-
                  } else {
-                     RaftNode.setRole(Cons.FOLLOWER);
+                     //脑裂恢复的情况或者候选者发现已经有新主了
+                     channelHandlerContext.channel().writeAndFlush((Cons.RPC_TOBESLAVE + Cons.COLON + LogService.getTerm()).getBytes());
                  }
              }
              return;

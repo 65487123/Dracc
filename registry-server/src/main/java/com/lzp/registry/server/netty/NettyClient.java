@@ -50,7 +50,7 @@ public class NettyClient implements AutoCloseable {
     public static Channel getChannelAndRequestForVote(String requstId, String ip, int port, long term, long index) {
         try {
             Channel channel = bootstrap.connect(ip, port).sync().channel();
-            channel.writeAndFlush(requstId + Cons.COMMAND_SEPARATOR + "reqforvote" + Cons
+            channel.writeAndFlush(requstId + Cons.COMMAND_SEPARATOR + Cons.RPC_ASKFORVOTE + Cons
                     .COMMAND_SEPARATOR + term + Cons.COMMAND_SEPARATOR + index);
             return channel;
         } catch (Exception e) {

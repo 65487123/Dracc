@@ -30,4 +30,8 @@ public class Cons {
     public static final String COLON = ":";
     public static final String COMMAND_SEPARATOR = "-:";
     public static final String CLU_PRO = "cluster.properites";
+    public static final String RPC_ASKFORVOTE = "reqforvote";
+    public static final String RPC_TOBESLAVE = "tobeslave";
+    public static final String YES = "yes";
+    public static final String NO = "no";
 }

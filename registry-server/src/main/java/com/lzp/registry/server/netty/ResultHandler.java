@@ -33,8 +33,21 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
         String[] commandIdAndResult = new String(bytes).split(Cons.COLON);
-        if (commandIdAndResult[1].equals("1")) {
+        if (Cons.RPC_TOBESLAVE.equals(commandIdAndResult[0])) {
+            /* 收到这个消息的情况
+             * 1、选举时,远端节点任期比本端节点新
+             * 2、发起选举时候，收到新主的心跳(不论是否网络分区恢复)
+             * 3、脑裂恢复后,这个主节点向另一个从节点发送心跳,对方会回这个消息,
+             * 任期低的会降为从节点(因为任期高的是后选举出来的,后选举出来说明是多数派分区)
+             */
+            long opposingTerm = Long.parseLong(commandIdAndResult[1]);
+            if (opposingTerm >= RaftNode.getTerm()) {
+                long preTerm = RaftNode.updateTerm(opposingTerm);
+                RaftNode.downgradeToSlaveNode(preTerm);
+            }
+        } else if (Cons.YES.equals(commandIdAndResult[1])) {
             RaftNode.getCidAndResultMap().get(commandIdAndResult[0]).countDown();
         }
+
     }
 }
