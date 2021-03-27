@@ -47,10 +47,10 @@ public class NettyClient implements AutoCloseable {
      * @author: Lu ZePing
      * @date: 2020/9/27 18:32
      */
-    public static Channel getChannelAndRequestForVote(String ip, int port, long term, long index) {
+    public static Channel getChannelAndRequestForVote(String requstId, String ip, int port, long term, long index) {
         try {
             Channel channel = bootstrap.connect(ip, port).sync().channel();
-            channel.writeAndFlush(RaftNode.getCommandId() + Cons.COMMAND_SEPARATOR + "reqforvote" + Cons
+            channel.writeAndFlush(requstId + Cons.COMMAND_SEPARATOR + "reqforvote" + Cons
                     .COMMAND_SEPARATOR + term + Cons.COMMAND_SEPARATOR + index);
             return channel;
         } catch (Exception e) {
@@ -62,9 +62,11 @@ public class NettyClient implements AutoCloseable {
             if (RaftNode.getTerm() != term) {
                 return null;
             } else if (Cons.LEADER.equals(RaftNode.getRole())) {
-                return getChannelAndCheckSync(ip, port, term, index);
+                return getChannelAndSendHeatbeat(ip, port, term);
             } else if (Cons.CANDIDATE.equals(RaftNode.getRole())) {
-                return getChannelAndRequestForVote(ip, port, term, index);
+                return getChannelAndRequestForVote(requstId, ip, port, term, index);
+            } else {
+                return null;
             }
         }
     }
@@ -73,30 +75,28 @@ public class NettyClient implements AutoCloseable {
     /**
      * Description:
      * 本节点已经被选举为主节点了,但是还有少数从节点处于失连状态
-     * 则需要不断重连,并且在连接成功后发起日志同步请求(如果不一致的话)
+     * 则需要不断重连,连接成功后发送一个心跳包
      *
      * @author: Lu ZePing
      * @date: 2020/9/27 18:32
      */
-    public static Channel getChannelAndCheckSync(String ip, int port, long term, long index) {
+    public static Channel getChannelAndSendHeatbeat(String ip, int port, long term) {
         try {
             Channel channel = bootstrap.connect(ip, port).sync().channel();
-            channel.writeAndFlush(RaftNode.getCommandId() + Cons.COMMAND_SEPARATOR + "reqforsync" + Cons
-                    .COMMAND_SEPARATOR + term + Cons.COMMAND_SEPARATOR + index);
+            channel.writeAndFlush(new byte[0]);
             return channel;
         } catch (Exception e) {
-            if (Cons.LEADER.equals(RaftNode.getRole())) {
+            if (Cons.LEADER.equals(RaftNode.getRole()) && RaftNode.getTerm() == term) {
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException ex) {
-                    LOGGER.error(e.getMessage(),e);
+                    LOGGER.error(e.getMessage(), e);
                 }
-                return getChannelAndCheckSync(ip, port, term, index);
+                return getChannelAndSendHeatbeat(ip, port, term);
             }
             return null;
         }
     }
-
 
 
     @Override

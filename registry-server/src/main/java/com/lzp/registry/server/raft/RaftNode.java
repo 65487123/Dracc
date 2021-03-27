@@ -73,43 +73,6 @@ public class RaftNode {
         }
     }
 
-    /**
-     * 重写equals方法以便放入set中
-     */
-    private static class Connection {
-        private Channel channel;
-
-        Connection(Channel channel) {
-            this.channel = channel;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (o instanceof Connection) {
-                Connection connection = (Connection) o;
-                InetSocketAddress inetSocketAddress = (InetSocketAddress) this.channel.remoteAddress();
-                InetSocketAddress inetSocketAddress1 = (InetSocketAddress) connection.channel.remoteAddress();
-                return getIp(inetSocketAddress).equals(getIp(inetSocketAddress1))
-                        && getPort(inetSocketAddress) == getPort(inetSocketAddress1);
-            } else {
-                return false;
-            }
-        }
-
-        @Override
-        public int hashCode() {
-            return 1;
-        }
-
-        private String getIp(InetSocketAddress inetSocketAddress) {
-            return inetSocketAddress.getAddress().getHostAddress();
-        }
-
-        private int getPort(InetSocketAddress inetSocketAddress) {
-            return inetSocketAddress.getPort();
-        }
-    }
-
     private final static Logger LOGGER = LoggerFactory.getLogger(RaftNode.class);
 
     /**
@@ -146,7 +109,7 @@ public class RaftNode {
     /**
      * 主节点才有值
      */
-    private static Set<Connection> slaveChannels = new CopyOnWriteArraySet();
+    private static Map<String, List<Channel>> termAndSlaveChannels;
 
     /**
      * 半数
@@ -164,6 +127,10 @@ public class RaftNode {
     private static AtomicInteger commandIdCunter = new AtomicInteger();
 
     static {
+        String currentTerm = LogService.getTerm();
+        termAndSlaveChannels = new ConcurrentHashMap<>();
+        termAndSlaveChannels.put(currentTerm, new CopyOnWriteArrayList<>());
+        term = Long.parseLong(currentTerm);
         Properties clusterProperties = PropertyUtil.getProperties(Cons.CLU_PRO);
         String[] remoteNodeIps = clusterProperties.getProperty("remoteRaftNodes").split(",");
         halfCount = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
@@ -181,6 +148,7 @@ public class RaftNode {
      * 发起选举
      */
     private static void startElection(String[] remoteNodeIps) {
+        updateTermAndSlaveChannels();
         role = Cons.CANDIDATE;
         String voteRequestId = getCommandId();
         CountDownLatch countDownLatch = new CountDownLatch(halfCount);
@@ -189,58 +157,88 @@ public class RaftNode {
                 TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("ask for vote"));
         for (String remoteNodeIp : remoteNodeIps) {
             String[] ipAndPort = remoteNodeIp.split(Cons.COLON);
-            threadPoolExecutor.execute(() -> {
-                Channel channel = NettyClient.getChannelAndRequestForVote(ipAndPort[0], Integer
-                        .parseInt(ipAndPort[1]), term = LogService.increaseCurrentTerm(term), LogService.getLogIndex());
-                if (channel != null) {
-                    if (slaveChannels.add(new Connection(channel))) {
-                        addListenerOnChannel(channel);
-                    } else {
-                        channel.close();
-                    }
-                }
-            });
+            threadPoolExecutor.execute(() -> sendRpcAndSaveChannel(term, voteRequestId, ipAndPort[0], ipAndPort[1]));
         }
         try {
             if (countDownLatch.await(ThreadLocalRandom.current().nextLong(3000, 5000), TimeUnit.MILLISECONDS)) {
-                upgradToLeader();
+                upgradToLeader(Long.toString(term));
+            } else {
+                startElection(remoteNodeIps);
             }
         } catch (InterruptedException e) {
             LOGGER.info("Interrupted while waiting for vote", e);
         }
+    }
 
+    /**
+     * 发起投票并保存连接
+     */
+    private static void sendRpcAndSaveChannel(long currentTerm, String voteRequestId, String ip, String port) {
+        Channel channel = NettyClient.getChannelAndRequestForVote(voteRequestId, ip, Integer
+                .parseInt(port), currentTerm, LogService.getLogIndex());
+        if (channel != null) {
+            List<Channel> channelsToSlave;
+            if ((channelsToSlave = termAndSlaveChannels.get(Long.toString(currentTerm))) != null) {
+                channelsToSlave.add(channel);
+                addListenerOnChannel(channel, term);
+            }
+        }
+    }
+
+    /**
+     * 断开旧连接并从容器中移除,增加装新连接的容器
+     */
+    private static void updateTermAndSlaveChannels() {
+        List<Channel> oldChannels = termAndSlaveChannels.remove(Long.toString(term));
+        term = LogService.increaseCurrentTerm(term);
+        for (Channel channel : oldChannels) {
+            channel.close();
+        }
+        termAndSlaveChannels.put(Long.toString(term), new CopyOnWriteArrayList<>());
     }
 
     /**
      * 升级成主节点
      */
-    private static void upgradToLeader() {
+    private static void upgradToLeader(String term) {
         role = Cons.LEADER;
         heartBeatExecutor.execute(() -> {
             while (true) {
                 byte[] emptyPackage = new byte[0];
-                for (Connection connection : slaveChannels) {
-                    connection.channel.writeAndFlush(emptyPackage);
+                for (Channel channel : termAndSlaveChannels.get(term)) {
+                    channel.writeAndFlush(emptyPackage);
+                }
+                try {
+                    Thread.sleep(4000);
+                } catch (InterruptedException e) {
+                    break;
                 }
             }
         });
     }
 
     /**
+     * 降级为从节点
+     */
+    public static void downgradeToSlaveNode() {
+        heartBeatExecutor.shutdownNow();
+        role = Cons.FOLLOWER;
+    }
+
+    /**
      * 监听channel,当channel关闭后,根据具体情况选择是否重连
      */
-    private static void addListenerOnChannel(Channel channel) {
+    private static void addListenerOnChannel(Channel channel, long term) {
         channel.closeFuture().addListener(future -> {
-            slaveChannels.remove(new Connection(channel));
-            if (Cons.LEADER.equals(RaftNode.getRole())) {
+            if (Cons.LEADER.equals(RaftNode.getRole()) && RaftNode.term == term) {
                 InetSocketAddress inetSocketAddress = (InetSocketAddress) channel.remoteAddress();
-                Channel newChannel = NettyClient.getChannelAndCheckSync(inetSocketAddress.getAddress()
-                        .getHostAddress(), inetSocketAddress.getPort(), term, LogService.getLogIndex());
+                Channel newChannel = NettyClient.getChannelAndSendHeatbeat(inetSocketAddress.getAddress()
+                        .getHostAddress(), inetSocketAddress.getPort(), term);
                 if (newChannel != null) {
-                    if (slaveChannels.add(new Connection(newChannel))){
-                        addListenerOnChannel(newChannel);
-                    }else {
-                        newChannel.close();
+                    List<Channel> slaveChannels;
+                    if ((slaveChannels = termAndSlaveChannels.get(Long.toString(term))) != null) {
+                        slaveChannels.add(newChannel);
+                        addListenerOnChannel(newChannel, term);
                     }
                 }
             }

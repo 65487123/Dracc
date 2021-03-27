@@ -108,6 +108,21 @@ public class LogService {
     }
 
     /**
+     * 获取当前raftnode的当前term
+     */
+    public static String getTerm() {
+        try (BufferedReader bufferedReader = new BufferedReader(new FileReader("./persistence/term.txt"))) {
+            String currentTerm = bufferedReader.readLine();
+            return currentTerm;
+        } catch (IOException e) {
+            LOGGER.error(e.getMessage(), e);
+            return getTerm();
+        }
+    }
+
+
+
+    /**
      * 获取当前日志的index
      */
     public static long getLogIndex() {
