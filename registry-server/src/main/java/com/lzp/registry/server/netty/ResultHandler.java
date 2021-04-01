@@ -41,13 +41,12 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
              * 任期低的会降为从节点(因为任期高的是后选举出来的,后选举出来说明是多数派分区)
              */
             long opposingTerm = Long.parseLong(commandIdAndResult[1]);
-            if (opposingTerm >= RaftNode.getTerm()) {
+            if (opposingTerm >= RaftNode.term) {
                 long preTerm = RaftNode.updateTerm(opposingTerm);
                 RaftNode.downgradeToSlaveNode(preTerm);
             }
         } else if (Cons.YES.equals(commandIdAndResult[1])) {
-            RaftNode.getCidAndResultMap().get(commandIdAndResult[0]).countDown();
+            RaftNode.cidAndResultMap.get(commandIdAndResult[0]).countDown();
         }
-
     }
 }

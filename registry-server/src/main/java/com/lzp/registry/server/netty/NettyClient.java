@@ -59,7 +59,7 @@ public class NettyClient implements AutoCloseable {
             } catch (InterruptedException ex) {
                 LOGGER.error(e.getMessage(), e);
             }
-            if (RaftNode.getTerm() != term) {
+            if (RaftNode.term != term) {
                 return null;
             } else if (Cons.LEADER.equals(RaftNode.getRole())) {
                 return getChannelAndSendHeatbeat(ip, port, term);
@@ -86,7 +86,7 @@ public class NettyClient implements AutoCloseable {
             channel.writeAndFlush(new byte[0]);
             return channel;
         } catch (Exception e) {
-            if (Cons.LEADER.equals(RaftNode.getRole()) && RaftNode.getTerm() == term) {
+            if (Cons.LEADER.equals(RaftNode.getRole()) && RaftNode.term == term) {
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException ex) {

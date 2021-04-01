@@ -31,7 +31,14 @@ public class Cons {
     public static final String COMMAND_SEPARATOR = "-:";
     public static final String CLU_PRO = "cluster.properites";
     public static final String RPC_ASKFORVOTE = "reqforvote";
+    public static final String RPC_FROMCLIENT = "fromcli";
+    public static final String RPC_REPLICATION = "replication";
     public static final String RPC_TOBESLAVE = "tobeslave";
+    public static final String GET = "get";
+    public static final String ADD = "add";
+    public static final String REM = "rem";
     public static final String YES = "yes";
-    public static final String NO = "no";
+    public static final String FALSE = "false";
+    public static final String EXCEPTION = "E";
+    public static final String READ_FAIL_MESSAGE = "The number of surviving nodes is less than half of the total number of nodes in the raft cluster, read operations are not supported";
 }

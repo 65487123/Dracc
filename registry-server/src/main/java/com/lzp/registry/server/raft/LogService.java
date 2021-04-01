@@ -22,28 +22,49 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * Description:提供写日志的一些api
+ *
+ * 总共有四个文件
+ * 1、committedEntry.txt
+ * 保存所有已提交的日志条目
+ * 2、uncommittedEntry.txt
+ * 保存所有未提交的日志条目
+ * 3、snapshot.snp
+ * 保存状态机快照的文件
+ * 4、coveredindex.txt
+ * 保存被覆盖的日志索引总数
+ *
+ * 具体工作流程:
+ * 当已提交的日志条目数达到一定数时(可配置),会生成当前状态机的快照,保存到snapshot.snp文件中，
+ * 然后清空committedEntry.txt文件,并且把已提交日志的最后一条索引保存到coveredindex.txt文件中。
+ *
+ * 当重启服务时,会先恢复快照文件,并把已提交的日志条目一条一条执行,从而把状态机恢复到服务停止前的状态。
+ * 已提交的日志条目数(文本行数)加上coveredindex.txt里读出来的索引值就是实际所有已提交日志条目数。
+ * 未提交的日志也会恢复到内存中
  *
  * @author: Zeping Lu
  * @date: 2021/3/16 18:41
  */
 public class LogService {
     private static final Logger LOGGER = LoggerFactory.getLogger(LogService.class);
-    private static BufferedWriter bufferedWriter;
-    private static BufferedReader bufferedReader;
+
+
+    private static BufferedWriter committedEntryWriter;
+    private static BufferedWriter uncommittedEntryWriter;
+    private static Queue<String> uncommittedEntries;
     private static long index;
+    private static final char[] BUFFER_FOR_UNCOMMITTED_ENTRY = new char[10000];
 
     static {
         try {
-            long baseCount;
-            try (BufferedReader baseIndexReader = new BufferedReader(new FileReader("./persistence/coveredindex.snp"))) {
-                baseCount = Long.parseLong(baseIndexReader.readLine());
-            }
-            bufferedWriter = new BufferedWriter(new FileWriter("./persistence/journal.txt", true));
-            bufferedReader = new BufferedReader(new FileReader("./persistence/journal.txt"));
-            index = baseCount + bufferedReader.lines().count() - 1;
+            committedEntryWriter = new BufferedWriter(new FileWriter("./persistence/committedEntry.txt", true));
+            committedEntryWriter = new BufferedWriter(new FileWriter("./persistence/committedEntry.txt", true));
+            restoreIndex();
+
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
         }
@@ -51,13 +72,13 @@ public class LogService {
 
 
     /**
-     * append log and return log index
+     * 添加已提交的日志条目,并且返回添加的条目的索引
      */
     public static long append(String command, long term) {
         try {
-            bufferedWriter.write(command + " " + term);
-            bufferedWriter.newLine();
-            bufferedWriter.flush();
+            committedEntryWriter.write(command + " " + term);
+            committedEntryWriter.newLine();
+            committedEntryWriter.flush();
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
         }
@@ -72,18 +93,25 @@ public class LogService {
         try (BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(new FileOutputStream("./persistence/snapshot.snp"))) {
             bufferedOutputStream.write(DataSearialUtil.serialize(data));
             bufferedOutputStream.flush();
-            bufferedWriter.close();
-            bufferedWriter = new BufferedWriter(new FileWriter("./persistence/journal.txt"));
+            committedEntryWriter.close();
+            committedEntryWriter = new BufferedWriter(new FileWriter("./persistence/committedEntry.txt"));
         } catch (IOException e) {
             LOGGER.error("generate snapshot error", e);
         }
     }
 
     /**
+     * 获取当前日志的index
+     */
+    public static long getLogIndex() {
+        return index;
+    }
+
+    /**
      * 把快照包含的日志条目持久化到磁盘
      */
     private static void writeIndex() {
-        try (BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter("./persistence/coveredindex.snp"))) {
+        try (BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter("./persistence/coveredindex.txt"))) {
             bufferedWriter.write(Long.toString(index));
             bufferedWriter.flush();
         } catch (IOException e) {
@@ -120,12 +148,78 @@ public class LogService {
         }
     }
 
-
+    /**
+     * 把保存未提交日志的文件第一行删除
+     */
+    public static void removeFirstUncommittedEntry() {
+        try (BufferedReader bufferedReader = new BufferedReader(new FileReader("./persistence/uncommittedEntry.txt"))) {
+            int num = removeTheFirstLine(BUFFER_FOR_UNCOMMITTED_ENTRY, bufferedReader.read(BUFFER_FOR_UNCOMMITTED_ENTRY));
+            uncommittedEntryWriter = new BufferedWriter(new FileWriter("A.txt"));
+            uncommittedEntryWriter.write(BUFFER_FOR_UNCOMMITTED_ENTRY, 0, num);
+        } catch (IOException e) {
+            LOGGER.error(e.getMessage(), e);
+        }
+    }
 
     /**
-     * 获取当前日志的index
+     * 清空未提交的日志记录
      */
-    public static long getLogIndex() {
-        return index;
+    public static void clearUncommittedEntry() {
+        try {
+            uncommittedEntryWriter = new BufferedWriter(new FileWriter("A.txt"));
+            uncommittedEntries.clear();
+        } catch (IOException e) {
+            LOGGER.error(e.getMessage(), e);
+            clearUncommittedEntry();
+        }
+    }
+
+    /**
+     * 删除第一行记录
+     *
+     * @param chars   保存字符的空间
+     * @param numRead 有效字符个数(从文件中读出来的总字符个数)
+     * @return 删除第一行记录后的总字符个数
+     */
+    private static int removeTheFirstLine(char[] chars,int numRead) {
+        int index = 0;
+        for (int i = 0; i < chars.length; i++) {
+            if (chars[i] == '\r' || chars[i] == '\n') {
+                index = i;
+                break;
+            }
+        }
+        int biginIndex = index + 1;
+        if (chars[biginIndex] == '\n') {
+            biginIndex = index + 2;
+        }
+        int numMoved = numRead - biginIndex;
+        System.arraycopy(chars, biginIndex, chars, 0, numMoved);
+        return numMoved;
+    }
+
+    /**
+     * 恢复已提交日志最后条的索引
+     */
+    private static void restoreIndex() throws IOException {
+        long baseCount;
+        try (BufferedReader baseIndexReader = new BufferedReader(new FileReader("./persistence/coveredindex.txt"));
+             BufferedReader committedEntryReader = new BufferedReader(new FileReader("./persistence/committedEntry.txt"))) {
+            baseCount = Long.parseLong(baseIndexReader.readLine());
+            index = baseCount + committedEntryReader.lines().count() - 1;
+        }
+    }
+
+    /**
+     * 把未提交的日志条目恢复到内存中
+     */
+    private static void restoreYncommittedEntry() throws IOException {
+        uncommittedEntries = new ConcurrentLinkedQueue<>();
+        try (BufferedReader uncommittedEntryReader = new BufferedReader(new FileReader("./persistence/uncommittedEntry.txt"))) {
+            String uncommittedEntry;
+            while ((uncommittedEntry = uncommittedEntryReader.readLine()) != null) {
+                uncommittedEntries.offer(uncommittedEntry);
+            }
+        }
     }
 }

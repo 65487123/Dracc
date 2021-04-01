@@ -45,7 +45,7 @@ public class NettyServer {
                 protected void initChannel(Channel channel) {
                     channel.pipeline().addLast(new IdleStateHandler(15, Integer.MAX_VALUE, Integer.MAX_VALUE))
                             .addLast(new LzpRaftMessageDecoder(true)).addLast(new LzpMessageEncoder())
-                            .addLast("serviceHandler", new ServiceHandler());
+                            .addLast("serviceHandler", new CoreHandler());
                 }
             }).bind(ip, port).sync();
 

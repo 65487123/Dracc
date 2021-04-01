@@ -21,6 +21,7 @@ import com.lzp.registry.common.util.PropertyUtil;
 import com.lzp.registry.common.util.ThreadFactoryImpl;
 import com.lzp.registry.server.netty.NettyClient;
 import com.lzp.registry.server.netty.NettyServer;
+import com.lzp.registry.server.netty.CoreHandler;
 import com.lzp.registry.server.util.CountDownLatch;
 import io.netty.channel.Channel;
 import org.slf4j.Logger;
@@ -72,20 +73,9 @@ public class RaftNode {
     private final static Logger LOGGER = LoggerFactory.getLogger(RaftNode.class);
 
     /**
-     * 真正的数据(状态机)
-     */
-    private static Map<String, Set<String>> data = new HashMap<>();
-
-    /**
-     * 任期
-     */
-    private static long term;
-
-    /**
      * 当前节点角色
      */
     private static volatile String role;
-
 
     /**
      * 执行超时选举任务的线程池
@@ -95,7 +85,7 @@ public class RaftNode {
     /**
      * 执行心跳任务的线程池
      */
-    private static ExecutorService heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("heatbeat"));
+    private static ExecutorService heartBeatExecutor;
 
     /**
      * 超时选举任务
@@ -103,24 +93,34 @@ public class RaftNode {
     private static DelayTask electionTask;
 
     /**
+     * id计数器
+     */
+    private static AtomicInteger commandIdCunter = new AtomicInteger();
+
+    /**
+     * 任期
+     */
+    public static long term;
+
+    /**
      * 主节点才有值
      */
-    private static Map<String, List<Channel>> termAndSlaveChannels;
+    public static Map<String, List<Channel>> termAndSlaveChannels;
 
     /**
      * 半数
      */
-    private static short halfCount;
+    public static final short HALF_COUNT;
 
     /**
      * key是commandid,value是这个command向从节点发送以后收到的结果(是否半数成功)
      */
-    private static Map<String, CountDownLatch> cidAndResultMap = new ConcurrentHashMap<>();
+    public static Map<String, CountDownLatch> cidAndResultMap = new ConcurrentHashMap<>();
 
     /**
-     * id计数器
+     * 真正的数据(状态机)
      */
-    private static AtomicInteger commandIdCunter = new AtomicInteger();
+    public final static Map<String, Set<String>> DATA = new HashMap<>();
 
     static {
         String currentTerm = LogService.getTerm();
@@ -129,7 +129,7 @@ public class RaftNode {
         term = Long.parseLong(currentTerm);
         Properties clusterProperties = PropertyUtil.getProperties(Cons.CLU_PRO);
         String[] remoteNodeIps = clusterProperties.getProperty("remoteRaftNodes").split(Cons.COMMA);
-        halfCount = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
+        HALF_COUNT = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
         role = Cons.FOLLOWER;
         String[] localIpAndPort = clusterProperties.getProperty("localRaftNode").split(Cons.COLON);
         NettyServer.start(localIpAndPort[0], Integer.parseInt(localIpAndPort[1]));
@@ -148,7 +148,7 @@ public class RaftNode {
         updateTermAndSlaveChannels();
         role = Cons.CANDIDATE;
         String voteRequestId = getCommandId();
-        CountDownLatch countDownLatch = new CountDownLatch(halfCount);
+        CountDownLatch countDownLatch = new CountDownLatch(HALF_COUNT);
         cidAndResultMap.put(voteRequestId, countDownLatch);
         ExecutorService threadPoolExecutor = new ThreadPoolExecutor(remoteNodeIps.length, remoteNodeIps.length, 0,
                 TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("ask for vote"));
@@ -167,6 +167,7 @@ public class RaftNode {
         }
     }
 
+
     /**
      * 发起投票并保存连接
      */
@@ -182,6 +183,7 @@ public class RaftNode {
         }
     }
 
+
     /**
      * 断开旧连接并从容器中移除,增加装新连接的容器,发起选举时会执行此方法
      */
@@ -194,15 +196,18 @@ public class RaftNode {
         termAndSlaveChannels.put(Long.toString(term), new CopyOnWriteArrayList<>());
     }
 
+
     /**
      * 升级成主节点
      */
     private static void upgradToLeader(String term) {
         role = Cons.LEADER;
+        CoreHandler.slaves = termAndSlaveChannels.get(term);
+        heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("heatbeat"));
         heartBeatExecutor.execute(() -> {
             while (true) {
                 byte[] emptyPackage = new byte[0];
-                for (Channel channel : termAndSlaveChannels.get(term)) {
+                for (Channel channel : CoreHandler.slaves) {
                     channel.writeAndFlush(emptyPackage);
                 }
                 try {
@@ -213,6 +218,7 @@ public class RaftNode {
             }
         });
     }
+
 
     /**
      * 当主节点收到更高任期的心跳时(网络分区恢复后)或者候选者发现已经有leader了(收到心跳),
@@ -225,10 +231,13 @@ public class RaftNode {
         }
         role = Cons.FOLLOWER;
         heartBeatExecutor.shutdownNow();
+        CoreHandler.resetReplicationThreadPool();
+        LogService.clearUncommittedEntry();
         electionTask = new DelayTask(() -> startElection(PropertyUtil.getProperties(Cons.CLU_PRO)
                 .getProperty("localRaftNode").split(Cons.COLON)), ThreadLocalRandom.current().nextInt(12000, 18000));
         timeoutToElectionExecutor.execute(electionTask);
     }
+
 
     /**
      * 监听channel,当channel关闭后,根据具体情况选择是否重连
@@ -249,6 +258,7 @@ public class RaftNode {
             }
         });
     }
+
 
     /**
      * 获取当前角色
@@ -278,19 +288,7 @@ public class RaftNode {
         return Integer.toString(commandIdCunter.getAndIncrement());
     }
 
-    /**
-     * 获取命令id以及相应结果map
-     */
-    public static Map<String, CountDownLatch> getCidAndResultMap() {
-        return cidAndResultMap;
-    }
 
-    /**
-     * 获取当前任期
-     */
-    public static long getTerm() {
-        return term;
-    }
 
     /**
      * 增长当前任期
