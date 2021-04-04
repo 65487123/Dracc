@@ -128,7 +128,7 @@ public class RaftNode {
         termAndSlaveChannels.put(currentTerm, new CopyOnWriteArrayList<>());
         term = Long.parseLong(currentTerm);
         Properties clusterProperties = PropertyUtil.getProperties(Cons.CLU_PRO);
-        String[] remoteNodeIps = clusterProperties.getProperty("remoteRaftNodes").split(Cons.COMMA);
+        String[] remoteNodeIps = clusterProperties.getProperty("peerRaftNodes").split(Cons.COMMA);
         HALF_COUNT = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
         role = Cons.FOLLOWER;
         String[] localIpAndPort = clusterProperties.getProperty("localRaftNode").split(Cons.COLON);

@@ -40,5 +40,5 @@ public class Cons {
     public static final String YES = "yes";
     public static final String FALSE = "false";
     public static final String EXCEPTION = "E";
-    public static final String READ_FAIL_MESSAGE = "The number of surviving nodes is less than half of the total number of nodes in the raft cluster, read operations are not supported";
+    public static final String CLUSTER_DOWN_MESSAGE = "Less than half of the nodes survive, and the cluster does not provide services";
 }

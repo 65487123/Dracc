@@ -25,9 +25,9 @@ package com.lzp.registry.common.exception;
  * @author: Zeping Lu
  * @date: 2021/3/29 18:18
  */
-public class ReadFailedException extends RuntimeException {
+public class TheClusterIsDownException extends RuntimeException {
 
-    public ReadFailedException(String message) {
+    public TheClusterIsDownException(String message) {
         //"The number of surviving nodes is less than half of the total number of nodes in the raft cluster, and read operations are not supported"
         super(message);
     }

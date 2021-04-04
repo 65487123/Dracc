@@ -26,23 +26,26 @@ import com.lzp.registry.server.util.ThreadPoolExecutor;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 
 /**
- * Description:处理rpc请求具体内容的handler
+ * Description:处理rpc请求核心handler
  *
  * @author: Zeping Lu
  * @date: 2021/3/19 10:56
  */
 public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
 
+    private final static Logger LOGGER = LoggerFactory.getLogger(CoreHandler.class);
     private static ExecutorService REPLICATION_THREAD_POOL;
     public static List<Channel> slaves;
 
@@ -121,38 +124,49 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     }
 
     /**
-     * 处理写请求
+     * 处理客户端具体请求
      */
     private void handleClientReq(String[] command, ChannelHandlerContext channelHandlerContext) {
-        if (Cons.GET.equals(command[0])) {
-            if (RaftNode.termAndSlaveChannels.get(String.valueOf(RaftNode.term)).size() < RaftNode.HALF_COUNT) {
-                channelHandlerContext.writeAndFlush((Cons.EXCEPTION + Cons.READ_FAIL_MESSAGE).getBytes());
-            } else {
-                channelHandlerContext.writeAndFlush(CommonUtil.serial(RaftNode.DATA.get(command[2])).getBytes());
-            }
+        //当少于半数节点存活,整个集群是不可用的,直接返回异常
+        if (RaftNode.termAndSlaveChannels.get(String.valueOf(RaftNode.term)).size() < RaftNode.HALF_COUNT) {
+            channelHandlerContext.writeAndFlush((Cons.EXCEPTION + Cons.CLUSTER_DOWN_MESSAGE).getBytes());
         } else {
-            if (checkWillChangeTheStateMachine(command)) {
-                CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
-                String commandId;
-                RaftNode.cidAndResultMap.put(commandId = RaftNode.getCommandId(), countDownLatch);
-                for (Channel channel : slaves) {
-                    channel.writeAndFlush(commandId + Cons.COMMAND_SEPARATOR + Cons.RPC_REPLICATION + command[0] + Cons
-                            .RPC_REPLICATION + command[2] + Cons.RPC_REPLICATION + command[3]);
-                }
-                REPLICATION_THREAD_POOL.execute(new Runnable() {
-                    @Override
-                    public void run() {
-
-                    }
-                });
-                countDownLatch.await();
-                channelHandlerContext.writeAndFlush()
+            if (Cons.GET.equals(command[0])) {
+                channelHandlerContext.writeAndFlush(CommonUtil.serial(RaftNode.DATA.get(command[2])).getBytes());
             } else {
-                channelHandlerContext.writeAndFlush(Cons.FALSE.getBytes());
+                handleWriteReq(command, channelHandlerContext);
             }
         }
     }
 
-    private
+    /**
+     * 处理写请求
+     */
+    private void handleWriteReq(String[] command, ChannelHandlerContext channelHandlerContext){
+        if (checkWillChangeTheStateMachine(command)) {
+            CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
+            String commandId;
+            RaftNode.cidAndResultMap.put(commandId = RaftNode.getCommandId(), countDownLatch);
+            for (Channel channel : slaves) {
+                channel.writeAndFlush(commandId + Cons.COMMAND_SEPARATOR + Cons.RPC_REPLICATION + command[0] + Cons
+                        .RPC_REPLICATION + command[2] + Cons.RPC_REPLICATION + command[3]);
+            }
+            REPLICATION_THREAD_POOL.execute(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        countDownLatch.await(1, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        LOGGER.error("interrupted when waitting for response from slaves", e);
+                    }
+
+                }
+            });
+            countDownLatch.await();
+            channelHandlerContext.writeAndFlush()
+        } else {
+            channelHandlerContext.writeAndFlush(Cons.FALSE.getBytes());
+        }
+    }
 
 }

@@ -20,8 +20,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 
  /**
-  * Description:和{@link java.util.concurrent.CountDownLatch} 用法一样，
-  * 不过性能比他高很多
+  * Description:对{@link java.util.concurrent.CountDownLatch} 做了优化，
+  *
+  * 1、性能比他高很多
+  * 2、可重用(调用reset(),计数器会复位)
   *
   *
   * @author: Lu ZePing
@@ -139,7 +141,6 @@ import java.util.concurrent.atomic.AtomicInteger;
      /**
       * Decrements the count of the latch, releasing all waiting threads if
       * the count reaches zero.
-      *
       */
      public void countDown() {
          if (atomicInteger.decrementAndGet() == 0) {
@@ -172,4 +173,12 @@ import java.util.concurrent.atomic.AtomicInteger;
      public String toString() {
          return super.toString() + "[Count = " + atomicInteger.get() + "]";
      }
-}
+
+     /**
+      * reset this countdownlatch
+      */
+     public void reset(int value) {
+         reachZero = false;
+         atomicInteger.set(value);
+     }
+ }
