@@ -62,7 +62,7 @@ public class NettyClient implements AutoCloseable {
             if (RaftNode.term != term) {
                 return null;
             } else if (Cons.LEADER.equals(RaftNode.getRole())) {
-                return getChannelAndSendHeatbeat(ip, port, term);
+                return getChannelAndAskForSync(ip, port, term);
             } else if (Cons.CANDIDATE.equals(RaftNode.getRole())) {
                 return getChannelAndRequestForVote(requstId, ip, port, term, index);
             } else {
@@ -75,15 +75,16 @@ public class NettyClient implements AutoCloseable {
     /**
      * Description:
      * 本节点已经被选举为主节点了,但是还有少数从节点处于失连状态
-     * 则需要不断重连,连接成功后发送一个心跳包
+     * 则需要不断重连,连接成功后发送一个同步请求
      *
      * @author: Lu ZePing
      * @date: 2020/9/27 18:32
      */
-    public static Channel getChannelAndSendHeatbeat(String ip, int port, long term) {
+    public static Channel getChannelAndAskForSync(String ip, int port, long term) {
         try {
             Channel channel = bootstrap.connect(ip, port).sync().channel();
-            channel.writeAndFlush(new byte[0]);
+            channel.writeAndFlush(("x" + Cons.COMMAND_SEPARATOR + Cons.RPC_SYNC +
+                    Cons.COMMAND_SEPARATOR + RaftNode.term).getBytes());
             return channel;
         } catch (Exception e) {
             if (Cons.LEADER.equals(RaftNode.getRole()) && RaftNode.term == term) {
@@ -92,7 +93,7 @@ public class NettyClient implements AutoCloseable {
                 } catch (InterruptedException ex) {
                     LOGGER.error(e.getMessage(), e);
                 }
-                return getChannelAndSendHeatbeat(ip, port, term);
+                return getChannelAndAskForSync(ip, port, term);
             }
             return null;
         }

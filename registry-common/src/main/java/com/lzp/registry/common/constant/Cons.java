@@ -33,12 +33,15 @@ public class Cons {
     public static final String RPC_ASKFORVOTE = "reqforvote";
     public static final String RPC_FROMCLIENT = "fromcli";
     public static final String RPC_REPLICATION = "replication";
+    public static final String RPC_COMMIT = "commit";
+    public static final String RPC_SYNC = "sync";
     public static final String RPC_TOBESLAVE = "tobeslave";
     public static final String GET = "get";
     public static final String ADD = "add";
     public static final String REM = "rem";
     public static final String YES = "yes";
     public static final String FALSE = "false";
+    public static final String TRUE = "true";
     public static final String EXCEPTION = "E";
     public static final String CLUSTER_DOWN_MESSAGE = "Less than half of the nodes survive, and the cluster does not provide services";
 }

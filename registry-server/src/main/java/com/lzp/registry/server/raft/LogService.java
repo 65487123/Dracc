@@ -55,9 +55,9 @@ public class LogService {
 
     private static BufferedWriter committedEntryWriter;
     private static BufferedWriter uncommittedEntryWriter;
-    private static Queue<String> uncommittedEntries;
     private static long index;
     private static final char[] BUFFER_FOR_UNCOMMITTED_ENTRY = new char[10000];
+    private static Queue<String> uncommittedEntries;
 
     static {
         try {
@@ -72,16 +72,30 @@ public class LogService {
 
 
     /**
-     * 添加已提交的日志条目,并且返回添加的条目的索引
+     * 添加已提交的日志条目
      */
-    public static long append(String command, long term) {
+    private static void appendCommittedLog(String command/*, long term*/) {
         try {
-            committedEntryWriter.write(command + " " + term);
+            committedEntryWriter.write(command /*+ " " + term*/);
             committedEntryWriter.newLine();
             committedEntryWriter.flush();
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
         }
+    }
+
+    /**
+     * 添加未提交的日志条目,并且返回添加的条目的索引
+     */
+    public static long appendUnCommittedLog(String command/*, long term*/) {
+        try {
+            uncommittedEntryWriter.write(command /*+ " " + term*/);
+            committedEntryWriter.newLine();
+            committedEntryWriter.flush();
+        } catch (IOException e) {
+            LOGGER.error(e.getMessage(), e);
+        }
+        uncommittedEntries.offer(command);
         return ++index;
     }
 
@@ -98,6 +112,22 @@ public class LogService {
         } catch (IOException e) {
             LOGGER.error("generate snapshot error", e);
         }
+    }
+
+    /**
+     * 提交第一条未提交的日志
+     */
+    public static void commitFirstUncommittedLog() {
+        removeFirstUncommittedEntry();
+        appendCommittedLog(uncommittedEntries.poll());
+    }
+
+    /**
+     * 回滚第一条未提交的日志
+     */
+    public static void rollbackFirstUncommittedLog() {
+        removeFirstUncommittedEntry();
+        uncommittedEntries.poll();
     }
 
     /**
@@ -119,7 +149,6 @@ public class LogService {
         }
     }
 
-
     /**
      * 更新当前raftnode的term并返回更新后的值
      */
@@ -136,12 +165,11 @@ public class LogService {
     }
 
     /**
-     * 获取当前raftnode的当前term
+     * 获取当前raftnode的当前term(重启后)
      */
     public static String getTerm() {
         try (BufferedReader bufferedReader = new BufferedReader(new FileReader("./persistence/term.txt"))) {
-            String currentTerm = bufferedReader.readLine();
-            return currentTerm;
+            return bufferedReader.readLine();
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
             return getTerm();
@@ -154,7 +182,7 @@ public class LogService {
     public static void removeFirstUncommittedEntry() {
         try (BufferedReader bufferedReader = new BufferedReader(new FileReader("./persistence/uncommittedEntry.txt"))) {
             int num = removeTheFirstLine(BUFFER_FOR_UNCOMMITTED_ENTRY, bufferedReader.read(BUFFER_FOR_UNCOMMITTED_ENTRY));
-            uncommittedEntryWriter = new BufferedWriter(new FileWriter("A.txt"));
+            uncommittedEntryWriter = new BufferedWriter(new FileWriter("./persistence/uncommittedEntry.txt"));
             uncommittedEntryWriter.write(BUFFER_FOR_UNCOMMITTED_ENTRY, 0, num);
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
@@ -213,7 +241,7 @@ public class LogService {
     /**
      * 把未提交的日志条目恢复到内存中
      */
-    private static void restoreYncommittedEntry() throws IOException {
+    private static void restoreUncommittedEntry() throws IOException {
         uncommittedEntries = new ConcurrentLinkedQueue<>();
         try (BufferedReader uncommittedEntryReader = new BufferedReader(new FileReader("./persistence/uncommittedEntry.txt"))) {
             String uncommittedEntry;

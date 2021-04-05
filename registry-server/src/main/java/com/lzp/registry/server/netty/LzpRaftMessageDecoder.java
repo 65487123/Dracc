@@ -41,12 +41,6 @@ package com.lzp.registry.server.netty;
          if (length == 0) {
              if (isServer) {
                  channelHandlerContext.channel().writeAndFlush(new byte[0]);
-                 if (Cons.FOLLOWER.equals(RaftNode.getRole())) {
-                     RaftNode.ResetTimer();
-                 } else {
-                     //脑裂恢复的情况或者候选者发现已经有新主了
-                     channelHandlerContext.channel().writeAndFlush((Cons.RPC_TOBESLAVE + Cons.COLON + LogService.getTerm()).getBytes());
-                 }
              }
              return;
          }

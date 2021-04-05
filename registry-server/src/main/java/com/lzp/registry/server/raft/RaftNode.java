@@ -80,7 +80,7 @@ public class RaftNode {
     /**
      * 执行超时选举任务的线程池
      */
-    private static ExecutorService timeoutToElectionExecutor;
+    private static final ExecutorService TIMEOUT_TO_ELECTION_EXECUTOR;
 
     /**
      * 执行心跳任务的线程池
@@ -95,7 +95,7 @@ public class RaftNode {
     /**
      * id计数器
      */
-    private static AtomicInteger commandIdCunter = new AtomicInteger();
+    private static final AtomicInteger COMMAND_ID_COUNTER = new AtomicInteger();
 
     /**
      * 任期
@@ -133,12 +133,12 @@ public class RaftNode {
         role = Cons.FOLLOWER;
         String[] localIpAndPort = clusterProperties.getProperty("localRaftNode").split(Cons.COLON);
         NettyServer.start(localIpAndPort[0], Integer.parseInt(localIpAndPort[1]));
-        timeoutToElectionExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new DelayQueue(),
+        TIMEOUT_TO_ELECTION_EXECUTOR = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new DelayQueue(),
                 new ThreadFactoryImpl("timeout to election"));
-        timeoutToElectionExecutor.execute(() -> {
+        TIMEOUT_TO_ELECTION_EXECUTOR.execute(() -> {
         });
         electionTask = new DelayTask(() -> startElection(remoteNodeIps), ThreadLocalRandom.current().nextInt(12000, 18000));
-        timeoutToElectionExecutor.execute(electionTask);
+        TIMEOUT_TO_ELECTION_EXECUTOR.execute(electionTask);
     }
 
     /**
@@ -221,10 +221,13 @@ public class RaftNode {
 
 
     /**
-     * 当主节点收到更高任期的心跳时(网络分区恢复后)或者候选者发现已经有leader了(收到心跳),
+     * 当主节点收到更高任期的消息时(网络分区恢复后)或者候选者发现已经有leader了,
      * 会执行此方法,降级为从节点
+     *
+     * @param newTerm 新任期
      */
-    public static void downgradeToSlaveNode(long preTerm) {
+    public static void downgradeToSlaveNode(long newTerm) {
+        long preTerm = RaftNode.updateTerm(newTerm);
         List<Channel> oldChannels = termAndSlaveChannels.remove(Long.toString(preTerm));
         for (Channel channel : oldChannels) {
             channel.close();
@@ -235,8 +238,9 @@ public class RaftNode {
         LogService.clearUncommittedEntry();
         electionTask = new DelayTask(() -> startElection(PropertyUtil.getProperties(Cons.CLU_PRO)
                 .getProperty("localRaftNode").split(Cons.COLON)), ThreadLocalRandom.current().nextInt(12000, 18000));
-        timeoutToElectionExecutor.execute(electionTask);
+        TIMEOUT_TO_ELECTION_EXECUTOR.execute(electionTask);
     }
+
 
 
     /**
@@ -246,7 +250,7 @@ public class RaftNode {
         channel.closeFuture().addListener(future -> {
             if (Cons.LEADER.equals(RaftNode.getRole()) && RaftNode.term == term) {
                 InetSocketAddress inetSocketAddress = (InetSocketAddress) channel.remoteAddress();
-                Channel newChannel = NettyClient.getChannelAndSendHeatbeat(inetSocketAddress.getAddress()
+                Channel newChannel = NettyClient.getChannelAndAskForSync(inetSocketAddress.getAddress()
                         .getHostAddress(), inetSocketAddress.getPort(), term);
                 if (newChannel != null) {
                     List<Channel> slaveChannels;
@@ -285,7 +289,7 @@ public class RaftNode {
      * 获取命令唯一id
      */
     public static String getCommandId() {
-        return Integer.toString(commandIdCunter.getAndIncrement());
+        return Integer.toString(COMMAND_ID_COUNTER.getAndIncrement());
     }
 
 
