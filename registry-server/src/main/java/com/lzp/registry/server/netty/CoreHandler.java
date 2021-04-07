@@ -50,14 +50,26 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     public static List<Channel> slaves;
 
     {
-        REPLICATION_THREAD_POOL = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<Runnable>(500),
-                new ThreadFactoryImpl("replication thread"), (r, executor) -> r.run());
+        REPLICATION_THREAD_POOL = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<Runnable>(1000),
+                new ThreadFactoryImpl("replication thread"), (r, executor) -> {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ignored) {
+            }
+            executor.execute(r);
+        });
     }
 
-    public static void resetReplicationThreadPool(){
+    public static void resetReplicationThreadPool() {
         REPLICATION_THREAD_POOL.shutdownNow();
-        REPLICATION_THREAD_POOL = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<Runnable>(500),
-                new ThreadFactoryImpl("replication thread"), (r, executor) -> r.run());
+        REPLICATION_THREAD_POOL = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<Runnable>(1000),
+                new ThreadFactoryImpl("replication thread"), (r, executor) -> {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ignored) {
+            }
+            executor.execute(r);
+        });
     }
 
     /**
@@ -77,14 +89,12 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 handleClientReq(command, channelHandlerContext);
             }
             case Cons.RPC_REPLICATION: {
-
+                //TODO 暂时没时间，有时间再写
             }
             case Cons.RPC_SYNC: {
                 handleSync(Long.parseLong(command[2]), channelHandlerContext);
             }
-            default: {
-
-            }
+            default: {}
         }
     }
 
@@ -94,8 +104,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     private void voteIfAppropriate(ChannelHandlerContext channelHandlerContext, String[] command) {
         if (Cons.FOLLOWER.equals(RaftNode.getRole())) {
             long opposingTerm = Long.parseLong(command[2]);
-            if (opposingTerm > RaftNode.term &&
-                    Long.parseLong(command[3]) >= LogService.getLogIndex()) {
+            if (opposingTerm > RaftNode.term && Long.parseLong(command[3]) >= LogService.getCommittedLogIndex()
+                    && Long.parseLong(command[4]) >= LogService.getUncommittedLogSize()) {
                 RaftNode.increaseTerm();
                 RaftNode.ResetTimer();
                 channelHandlerContext.writeAndFlush((command[0] + Cons.COLON + Cons.YES).getBytes());
@@ -143,20 +153,20 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 处理写请求
      */
-    private void handleWriteReq(String[] command, ChannelHandlerContext channelHandlerContext){
+    private void handleWriteReq(String[] command, ChannelHandlerContext channelHandlerContext) {
         if (checkWillChangeTheStateMachine(command)) {
             CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
             String commandId;
             RaftNode.cidAndResultMap.put(commandId = RaftNode.getCommandId(), countDownLatch);
             String specificOrder = command[0] + Cons.COMMAND_SEPARATOR + command[2] + Cons
                     .COMMAND_SEPARATOR + command[3];
-            long index = LogService.appendUnCommittedLog(specificOrder);
+            long unCommittedLogNum = LogService.appendUnCommittedLog(specificOrder);
             for (Channel channel : slaves) {
                 channel.writeAndFlush(commandId + Cons.COMMAND_SEPARATOR + Cons.RPC_REPLICATION + Cons
-                        .COMMAND_SEPARATOR + specificOrder + Cons.COMMAND_SEPARATOR + RaftNode.term + Cons.COMMAND_SEPARATOR
-                        + index);
+                        .COMMAND_SEPARATOR + specificOrder + Cons.COMMAND_SEPARATOR +
+                        LogService.getCommittedLogIndex() + Cons.COMMAND_SEPARATOR + unCommittedLogNum);
             }
-            REPLICATION_THREAD_POOL.execute(() -> receiveResponseAndMakeDecision(countDownLatch,command,channelHandlerContext));
+            REPLICATION_THREAD_POOL.execute(() -> receiveResponseAndMakeDecision(countDownLatch, command, channelHandlerContext));
         } else {
             channelHandlerContext.writeAndFlush(Cons.FALSE.getBytes());
         }
@@ -164,48 +174,46 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
 
 
     /**
-     * 等待从节点的响应,并根据具体响应结果做出最终的决定(提交日志或者
+     * 等待从节点的响应,并根据具体响应结果做出最终的决定
      */
-    private void receiveResponseAndMakeDecision(CountDownLatch countDownLatch,String[] command, ChannelHandlerContext channelHandlerContext){
+    private void receiveResponseAndMakeDecision(CountDownLatch countDownLatch, String[] command, ChannelHandlerContext channelHandlerContext) {
         boolean halfAgree = false;
         try {
-            halfAgree = countDownLatch.await(1, TimeUnit.SECONDS);
+            halfAgree = countDownLatch.await(60, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             LOGGER.error("interrupted when waitting for response from slaves", e);
         }
-        if (halfAgree){
-            commitAndReturnResult(command,channelHandlerContext);
-        }else {
-
+        if (halfAgree) {
+            commitAndReturnResult(command, channelHandlerContext);
+        } else {
+            //发送日志复制消息前有半数存活,发送日志复制消息时,却有连接断开了,防止数据不一致,重新选主
+            RaftNode.downgradeToSlaveNode(RaftNode.term);
         }
     }
 
     /**
-     *  提交日志、更新状态机并返回客户端结果
+     * 提交日志、更新状态机并返回客户端结果
      */
     private void commitAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext) {
         LogService.commitFirstUncommittedLog();
         switch (command[0]) {
             case Cons.ADD: {
                 RaftNode.DATA.get(command[2]).add(command[3]);
+                break;
             }
             case Cons.REM: {
                 RaftNode.DATA.get(command[2]).remove(command[3]);
+                break;
+            }
+            default: {
             }
         }
         channelHandlerContext.writeAndFlush(Cons.TRUE);
         for (Channel channel : slaves) {
-            channel.writeAndFlush("x" + Cons.COMMAND_SEPARATOR + Cons.RPC_COMMIT;
+            channel.writeAndFlush("x" + Cons.COMMAND_SEPARATOR + Cons.RPC_COMMIT + Cons.COMMAND_SEPARATOR);
         }
     }
 
-    /**
-     *  回滚未提交日志,并返回客户端写失败异常
-     */
-    private void rollback(ChannelHandlerContext channelHandlerContext) {
-        LogService.rollbackFirstUncommittedLog();
-        channelHandlerContext
-    }
 
     /**
      * 处理同步请求

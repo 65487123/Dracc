@@ -173,7 +173,7 @@ public class RaftNode {
      */
     private static void sendRpcAndSaveChannel(long currentTerm, String voteRequestId, String ip, String port) {
         Channel channel = NettyClient.getChannelAndRequestForVote(voteRequestId, ip, Integer
-                .parseInt(port), currentTerm, LogService.getLogIndex());
+                .parseInt(port), currentTerm, LogService.getCommittedLogIndex(), LogService.getUncommittedLogSize());
         if (channel != null) {
             List<Channel> channelsToSlave;
             if ((channelsToSlave = termAndSlaveChannels.get(Long.toString(currentTerm))) != null) {
@@ -203,7 +203,8 @@ public class RaftNode {
     private static void upgradToLeader(String term) {
         role = Cons.LEADER;
         CoreHandler.slaves = termAndSlaveChannels.get(term);
-        heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("heatbeat"));
+        heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(), new ThreadFactoryImpl("heatbeat"));
         heartBeatExecutor.execute(() -> {
             while (true) {
                 byte[] emptyPackage = new byte[0];
@@ -222,6 +223,7 @@ public class RaftNode {
 
     /**
      * 当主节点收到更高任期的消息时(网络分区恢复后)或者候选者发现已经有leader了,
+     * 或者遇到特殊情况,为了防止出现数据不一致,
      * 会执行此方法,降级为从节点
      *
      * @param newTerm 新任期
