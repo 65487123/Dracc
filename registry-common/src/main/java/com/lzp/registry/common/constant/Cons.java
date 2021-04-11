@@ -29,6 +29,7 @@ public class Cons {
     public static final String COMMA = ",";
     public static final String COLON = ":";
     public static final String COMMAND_SEPARATOR = "-:";
+    public static final String SPECIFICORDER_SEPARATOR = "-=";
     public static final String CLU_PRO = "cluster.properites";
     public static final String RPC_ASKFORVOTE = "reqforvote";
     public static final String RPC_FROMCLIENT = "fromcli";

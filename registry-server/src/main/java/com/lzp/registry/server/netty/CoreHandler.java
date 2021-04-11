@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 
@@ -46,11 +47,22 @@ import java.util.concurrent.TimeUnit;
 public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
 
     private final static Logger LOGGER = LoggerFactory.getLogger(CoreHandler.class);
-    private static ExecutorService REPLICATION_THREAD_POOL;
+    private static ExecutorService repilicationThreadPool;
     public static List<Channel> slaves;
+    private final ExecutorService SINGLE_THREAD_POOL = new ThreadPoolExecutor(1,1,0
+            ,new LinkedBlockingQueue(),new ThreadFactoryImpl("replication thread when log not synced"));
+    /**
+     * 单线程操作(一个io线程),无需加volatile
+     */
+    private boolean dataMustBeConsistent = false;
+
+    @Override
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        SINGLE_THREAD_POOL.shutdownNow();
+    }
 
     {
-        REPLICATION_THREAD_POOL = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<Runnable>(1000),
+        repilicationThreadPool = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<Runnable>(1000),
                 new ThreadFactoryImpl("replication thread"), (r, executor) -> {
             try {
                 Thread.sleep(100);
@@ -61,8 +73,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     }
 
     public static void resetReplicationThreadPool() {
-        REPLICATION_THREAD_POOL.shutdownNow();
-        REPLICATION_THREAD_POOL = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<Runnable>(1000),
+        repilicationThreadPool.shutdownNow();
+        repilicationThreadPool = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<Runnable>(1000),
                 new ThreadFactoryImpl("replication thread"), (r, executor) -> {
             try {
                 Thread.sleep(100);
@@ -89,13 +101,46 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 handleClientReq(command, channelHandlerContext);
             }
             case Cons.RPC_REPLICATION: {
-                //TODO 暂时没时间，有时间再写
+                handleReplicationReq(command,channelHandlerContext);
             }
             case Cons.RPC_SYNC: {
                 handleSync(Long.parseLong(command[2]), channelHandlerContext);
             }
             default: {}
         }
+    }
+
+    /**
+     * 处理日志复制请求
+     */
+    private void handleReplicationReq(String[] command,ChannelHandlerContext channelHandlerContext){
+        /*
+        收到这个消息时,任期肯定是已经同步了(建连接时会同步),
+        所以,只需要判断新添加的日志索引是否能接上上一个索引就行
+        如果不能接上,则需要先同步主节点的所有日志再复制这一条日志
+        * */
+        if (dataMustBeConsistent) {
+            //TODO
+        } else if (Long.parseLong(command[3]) == LogService.getCommittedLogIndex() && Long
+                .parseLong(command[4]) - 1 == LogService.getUncommittedLogSize()) {
+            dataMustBeConsistent = true;
+            //TODO
+        } else {
+            SINGLE_THREAD_POOL.execute(() -> waitUntilSyncThenReturnTrue(command, channelHandlerContext));
+        }
+    }
+
+    /**
+     * 等待同步日志成功,然后回日志复制成功结果
+     */
+    private synchronized void waitUntilSyncThenReturnTrue(String[] command, ChannelHandlerContext channelHandlerContext) {
+        while (!dataMustBeConsistent) {
+            try {
+                this.wait();
+            } catch (InterruptedException ignored) {
+            }
+        }
+        channelHandlerContext.writeAndFlush((command[0] + Cons.COLON + Cons.TRUE).getBytes());
     }
 
     /**
@@ -158,15 +203,15 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
             String commandId;
             RaftNode.cidAndResultMap.put(commandId = RaftNode.getCommandId(), countDownLatch);
-            String specificOrder = command[0] + Cons.COMMAND_SEPARATOR + command[2] + Cons
-                    .COMMAND_SEPARATOR + command[3];
+            String specificOrder = command[0] + Cons.SPECIFICORDER_SEPARATOR + command[2] + Cons
+                    .SPECIFICORDER_SEPARATOR + command[3];
             long unCommittedLogNum = LogService.appendUnCommittedLog(specificOrder);
             for (Channel channel : slaves) {
                 channel.writeAndFlush(commandId + Cons.COMMAND_SEPARATOR + Cons.RPC_REPLICATION + Cons
                         .COMMAND_SEPARATOR + specificOrder + Cons.COMMAND_SEPARATOR +
                         LogService.getCommittedLogIndex() + Cons.COMMAND_SEPARATOR + unCommittedLogNum);
             }
-            REPLICATION_THREAD_POOL.execute(() -> receiveResponseAndMakeDecision(countDownLatch, command, channelHandlerContext));
+            repilicationThreadPool.execute(() -> receiveResponseAndMakeDecision(countDownLatch, command, channelHandlerContext));
         } else {
             channelHandlerContext.writeAndFlush(Cons.FALSE.getBytes());
         }
@@ -219,6 +264,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 处理同步请求
      */
     private void handleSync(long opposingTerm, ChannelHandlerContext channelHandlerContext) {
+        //失连恢复后,数据(未提交数据)可能不一致
+        dataMustBeConsistent = false;
         if (Cons.FOLLOWER.equals(RaftNode.getRole())) {
             /*
             收到这个请求并且是Follower的情况
