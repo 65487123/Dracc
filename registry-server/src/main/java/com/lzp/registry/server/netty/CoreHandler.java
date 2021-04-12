@@ -93,21 +93,20 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
         String[] command = new String(bytes).split(Cons.COMMAND_SEPARATOR);
-        switch (command[1]) {
-            case Cons.RPC_ASKFORVOTE: {
-                voteIfAppropriate(channelHandlerContext, command);
-            }
-            case Cons.RPC_FROMCLIENT: {
-                handleClientReq(command, channelHandlerContext);
-            }
-            case Cons.RPC_REPLICATION: {
-                handleReplicationReq(command,channelHandlerContext);
-            }
-            case Cons.RPC_SYNC: {
-                handleSync(Long.parseLong(command[2]), channelHandlerContext);
-            }
-            default: {}
+        //分支不是特别多的情况下,if/else性能比switch要高,尤其是把高频率的分支放在前面
+        if (Cons.RPC_FROMCLIENT.equals(command[1])) {
+            handleClientReq(command, channelHandlerContext);
+        } else if (Cons.RPC_REPLICATION.equals(command[1])) {
+            handleReplicationReq(command, channelHandlerContext);
+        } else if (Cons.RPC_SYNC.equals(command[1])) {
+            handleSync(Long.parseLong(command[2]), channelHandlerContext);
+        } else if (Cons.RPC_ASKFORVOTE.equals(command[1])) {
+            voteIfAppropriate(channelHandlerContext, command);
+        } else {
+
         }
+
+
     }
 
     /**
