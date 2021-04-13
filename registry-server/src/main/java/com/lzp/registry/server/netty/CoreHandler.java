@@ -54,7 +54,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 单线程操作(一个io线程),无需加volatile
      */
-    private boolean dataMustBeConsistent = false;
+    private boolean logMustBeConsistent = false;
 
     @Override
     public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
@@ -112,28 +112,36 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 处理日志复制请求
      */
-    private void handleReplicationReq(String[] command,ChannelHandlerContext channelHandlerContext){
+    private void handleReplicationReq(String[] command, ChannelHandlerContext channelHandlerContext) {
         /*
         收到这个消息时,任期肯定是已经同步了(建连接时会同步),
         所以,只需要判断新添加的日志索引是否能接上上一个索引就行
         如果不能接上,则需要先同步主节点的所有日志再复制这一条日志
         * */
-        if (dataMustBeConsistent) {
-            //TODO
+        if (logMustBeConsistent) {
+            appendUncommittedLogAndReturnTrue(command, channelHandlerContext);
         } else if (Long.parseLong(command[3]) == LogService.getCommittedLogIndex() && Long
                 .parseLong(command[4]) - 1 == LogService.getUncommittedLogSize()) {
-            dataMustBeConsistent = true;
-            //TODO
+            logMustBeConsistent = true;
+            appendUncommittedLogAndReturnTrue(command, channelHandlerContext);
         } else {
             SINGLE_THREAD_POOL.execute(() -> waitUntilSyncThenReturnTrue(command, channelHandlerContext));
         }
     }
 
     /**
+     * 添加日志并且返回成功复制消息
+     */
+    private void appendUncommittedLogAndReturnTrue(String[] command, ChannelHandlerContext channelHandlerContext) {
+        LogService.appendUnCommittedLog(command[2]);
+        channelHandlerContext.writeAndFlush(command[0] + Cons.COLON + Cons.TRUE);
+    }
+
+    /**
      * 等待同步日志成功,然后回日志复制成功结果
      */
     private synchronized void waitUntilSyncThenReturnTrue(String[] command, ChannelHandlerContext channelHandlerContext) {
-        while (!dataMustBeConsistent) {
+        while (!logMustBeConsistent) {
             try {
                 this.wait();
             } catch (InterruptedException ignored) {
@@ -240,17 +248,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private void commitAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext) {
         LogService.commitFirstUncommittedLog();
-        switch (command[0]) {
-            case Cons.ADD: {
-                RaftNode.DATA.get(command[2]).add(command[3]);
-                break;
-            }
-            case Cons.REM: {
-                RaftNode.DATA.get(command[2]).remove(command[3]);
-                break;
-            }
-            default: {
-            }
+        if (Cons.ADD.equals(command[0])) {
+            RaftNode.DATA.get(command[2]).add(command[3]);
+        } else {
+            RaftNode.DATA.get(command[2]).remove(command[3]);
         }
         channelHandlerContext.writeAndFlush(Cons.TRUE);
         for (Channel channel : slaves) {
@@ -264,7 +265,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private void handleSync(long opposingTerm, ChannelHandlerContext channelHandlerContext) {
         //失连恢复后,数据(未提交数据)可能不一致
-        dataMustBeConsistent = false;
+        logMustBeConsistent = false;
         if (Cons.FOLLOWER.equals(RaftNode.getRole())) {
             /*
             收到这个请求并且是Follower的情况
