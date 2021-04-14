@@ -16,15 +16,15 @@
 
 package com.lzp.registry.server.raft;
 
+import com.lzp.registry.common.constant.Cons;
 import com.lzp.registry.server.util.Data;
 import com.lzp.registry.server.util.DataSearialUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.util.Queue;
+import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * Description:提供写日志的一些api
@@ -47,6 +47,15 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * 已提交的日志条目数(文本行数)加上coveredindex.txt里读出来的索引值就是实际所有已提交日志条目数。
  * 未提交的日志也会恢复到内存中
  *
+ *
+ *
+ * 就算每天有一亿条写操作记录到这个节点所属的cluster中,也需要2.5多亿年,索引数目才达到Long.MAX_VALUE。
+ * 所以基本不用考虑索引变为负数的情况.
+ *
+ * 就算这个程序真能跑几亿年。那可以等到索引数快到上限时,或者每隔一亿年,人工介入,暂时停止这个集群服务,修改
+ * 这个集群所有节点索引日志条目数(先关停所有节点的服务,然后修改每个节点的coveredindex.txt文件,把覆盖的日志
+ * 索引数目减去一个固定值)。
+ *
  * @author: Zeping Lu
  * @date: 2021/3/16 18:41
  */
@@ -64,13 +73,52 @@ public class LogService {
         try {
             committedEntryWriter = new BufferedWriter(new FileWriter("./persistence/committedEntry.txt", true));
             committedEntryWriter = new BufferedWriter(new FileWriter("./persistence/committedEntry.txt", true));
-            restoreIndex();
+            restoreCommittedIndex();
             restoreUncommittedEntry();
+            restoreStateMachine();
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
         }
     }
 
+    /**
+     * 恢复状态机
+     */
+    private static void restoreStateMachine() {
+        try (BufferedInputStream bufferedOutputStream = new BufferedInputStream(new FileInputStream("./persistence/snapshot.snp"));
+             BufferedReader committedEntryReader = new BufferedReader(new FileReader("./persistence/committedEntry.txt"))) {
+            byte[] bytes = new byte[bufferedOutputStream.available()];
+            bufferedOutputStream.read(bytes);
+            RaftNode.data = (Map<String, Set<String>>) DataSearialUtil.deserialize(bytes).getObject();
+            String command;
+            while ((command = committedEntryReader.readLine()) != null) {
+                parseAndExecuteCommand(command);
+            }
+        } catch (IOException e) {
+            RaftNode.data = new HashMap<>(100000);
+            LOGGER.error("generate snapshot error", e);
+        }
+    }
+
+
+    /**
+     * 执行写状态机的具体操作
+     */
+    private static void parseAndExecuteCommand(String command) {
+        String[] commandDetails = command.split(Cons.SPECIFICORDER_SEPARATOR);
+        Set<String> set;
+        if (Cons.ADD.equals(commandDetails[0])) {
+            if ((set = RaftNode.data.get(commandDetails[1])) == null) {
+                set = new HashSet<>();
+            }
+            set.add(commandDetails[2]);
+        } else {
+            if ((set = RaftNode.data.get(commandDetails[1])) == null) {
+                set = new HashSet<>();
+            }
+            set.remove(commandDetails[2]);
+        }
+    }
 
     /**
      * 添加已提交的日志条目
@@ -174,7 +222,7 @@ public class LogService {
     /**
      * 把保存未提交日志的文件第一行删除
      */
-    public static void removeFirstUncommittedEntry() {
+    private static void removeFirstUncommittedEntry() {
         try (BufferedReader bufferedReader = new BufferedReader(new FileReader("./persistence/uncommittedEntry.txt"))) {
             int num = removeTheFirstLine(BUFFER_FOR_UNCOMMITTED_ENTRY, bufferedReader.read(BUFFER_FOR_UNCOMMITTED_ENTRY));
             uncommittedEntryWriter = new BufferedWriter(new FileWriter("./persistence/uncommittedEntry.txt"));
@@ -231,7 +279,7 @@ public class LogService {
     /**
      * 恢复已提交日志最后条的索引
      */
-    private static void restoreIndex() throws IOException {
+    private static void restoreCommittedIndex() throws IOException {
         long baseCount;
         try (BufferedReader baseIndexReader = new BufferedReader(new FileReader("./persistence/coveredindex.txt"));
              BufferedReader committedEntryReader = new BufferedReader(new FileReader("./persistence/committedEntry.txt"))) {

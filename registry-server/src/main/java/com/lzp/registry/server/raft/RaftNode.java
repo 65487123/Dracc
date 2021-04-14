@@ -120,7 +120,7 @@ public class RaftNode {
     /**
      * 真正的数据(状态机)
      */
-    public final static Map<String, Set<String>> DATA = new HashMap<>();
+    public static Map<String, Set<String>> data = new HashMap<>();
 
     static {
         String currentTerm = LogService.getTerm();
@@ -273,12 +273,6 @@ public class RaftNode {
         return role;
     }
 
-    /**
-     * 设置当前角色
-     */
-    public static void setRole(String newRole) {
-        role = newRole;
-    }
 
     /**
      * 重置计时器
@@ -293,7 +287,6 @@ public class RaftNode {
     public static String getCommandId() {
         return Integer.toString(COMMAND_ID_COUNTER.getAndIncrement());
     }
-
 
 
     /**

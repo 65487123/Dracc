@@ -29,6 +29,7 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -103,7 +104,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else if (Cons.RPC_ASKFORVOTE.equals(command[1])) {
             voteIfAppropriate(channelHandlerContext, command);
         } else {
-
+            //TODO COMMIT
         }
 
 
@@ -172,7 +173,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 如果不会,则不必向从节点发送请求,直接返回结果
      */
     private boolean checkWillChangeTheStateMachine(String[] command) {
-        Map<String, Set<String>> data = RaftNode.DATA;
+        Map<String, Set<String>> data = RaftNode.data;
         switch (command[0]) {
             case Cons.ADD: {
                 return !data.get(command[2]).contains(command[3]);
@@ -195,7 +196,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             channelHandlerContext.writeAndFlush((Cons.EXCEPTION + Cons.CLUSTER_DOWN_MESSAGE).getBytes());
         } else {
             if (Cons.GET.equals(command[0])) {
-                channelHandlerContext.writeAndFlush(CommonUtil.serial(RaftNode.DATA.get(command[2])).getBytes());
+                channelHandlerContext.writeAndFlush(CommonUtil.serial(RaftNode.data.get(command[2])).getBytes());
             } else {
                 handleWriteReq(command, channelHandlerContext);
             }
@@ -248,10 +249,17 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private void commitAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext) {
         LogService.commitFirstUncommittedLog();
+        Set<String> set;
         if (Cons.ADD.equals(command[0])) {
-            RaftNode.DATA.get(command[2]).add(command[3]);
+            if ((set = RaftNode.data.get(command[2])) == null) {
+                set = new HashSet<>();
+            }
+            set.add(command[3]);
         } else {
-            RaftNode.DATA.get(command[2]).remove(command[3]);
+            if ((set = RaftNode.data.get(command[2])) == null) {
+                set = new HashSet<>();
+            }
+            set.remove(command[3]);
         }
         channelHandlerContext.writeAndFlush(Cons.TRUE);
         for (Channel channel : slaves) {
