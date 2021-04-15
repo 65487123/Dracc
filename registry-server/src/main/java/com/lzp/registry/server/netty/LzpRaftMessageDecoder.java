@@ -15,9 +15,6 @@
 
 package com.lzp.registry.server.netty;
 
- import com.lzp.registry.common.constant.Cons;
- import com.lzp.registry.server.raft.LogService;
- import com.lzp.registry.server.raft.RaftNode;
  import io.netty.buffer.ByteBuf;
  import io.netty.channel.ChannelHandlerContext;
  import io.netty.handler.codec.ReplayingDecoder;

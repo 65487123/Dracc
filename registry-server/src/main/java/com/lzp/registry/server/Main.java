@@ -14,23 +14,23 @@
  *  limitations under the License.
  */
 
-package com.lzp.registry.server.util;
+package com.lzp.registry.server;
+
+import com.lzp.registry.server.raft.RaftNode;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Description:序列化对象
+ * Description:
  *
  * @author: Zeping Lu
- * @date: 2021/3/22 13:56
+ * @date: 2021/2/15 13:17
  */
-public class Data {
-    private Object object;
 
-    public Object getObject() {
-        return object;
+@SpringBootApplication
+public class Main {
+
+    public static void main(String[] args) {
+        RaftNode.start();
     }
-
-    public Data(Object object) {
-        this.object = object;
-    }
-
 }
+

@@ -30,7 +30,9 @@ public class Cons {
     public static final String COLON = ":";
     public static final String COMMAND_SEPARATOR = "-:";
     public static final String SPECIFICORDER_SEPARATOR = "-=";
-    public static final String CLU_PRO = "cluster.properites";
+    public static final String CLU_PRO = "cluster.properties";
+    public static final String PERSI_PRO = "persistence.properties";
+    public static final String SNAPSHOT_BATCH_COUNT = "snapshot-batch-count";
     public static final String RPC_ASKFORVOTE = "reqforvote";
     public static final String RPC_FROMCLIENT = "fromcli";
     public static final String RPC_REPLICATION = "replication";

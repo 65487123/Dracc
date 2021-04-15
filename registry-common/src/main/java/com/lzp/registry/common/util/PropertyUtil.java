@@ -34,7 +34,7 @@ public class PropertyUtil {
 
     public static Properties getProperties(String fileName) {
         Properties properties = new Properties();
-        InputStream in = PropertyUtil.class.getClassLoader().getResourceAsStream("config." + fileName);
+        InputStream in = PropertyUtil.class.getClassLoader().getResourceAsStream("config/" + fileName);
         try {
             properties.load(in);
         } catch (Exception e) {

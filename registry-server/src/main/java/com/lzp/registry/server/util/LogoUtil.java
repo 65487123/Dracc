@@ -16,21 +16,23 @@
 
 package com.lzp.registry.server.util;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+
 /**
- * Description:序列化对象
+ * Description:启动时打印logo
  *
  * @author: Zeping Lu
- * @date: 2021/3/22 13:56
+ * @date: 2021/1/27 12:10
  */
-public class Data {
-    private Object object;
-
-    public Object getObject() {
-        return object;
+public class LogoUtil {
+    public static void printLogo() {
+        byte[] bytes;
+        try {
+            InputStream inputStream = LogoUtil.class.getClassLoader().getResourceAsStream("banner.txt");
+            inputStream.read(bytes = new byte[inputStream.available()]);
+            System.out.println(new String(bytes, StandardCharsets.UTF_8));
+        } catch (Exception ignored) {
+        }
     }
-
-    public Data(Object object) {
-        this.object = object;
-    }
-
 }

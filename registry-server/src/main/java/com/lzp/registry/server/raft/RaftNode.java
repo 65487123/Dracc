@@ -23,11 +23,13 @@ import com.lzp.registry.server.netty.NettyClient;
 import com.lzp.registry.server.netty.NettyServer;
 import com.lzp.registry.server.netty.CoreHandler;
 import com.lzp.registry.server.util.CountDownLatch;
+import com.lzp.registry.server.util.LogoUtil;
 import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
+import java.sql.SQLOutput;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -75,7 +77,7 @@ public class RaftNode {
     /**
      * 当前节点角色
      */
-    private static volatile String role;
+    private static volatile String role = Cons.FOLLOWER;
 
     /**
      * 执行超时选举任务的线程池
@@ -123,23 +125,26 @@ public class RaftNode {
     public static Map<String, Set<String>> data = new HashMap<>();
 
     static {
-        String currentTerm = LogService.getTerm();
-        termAndSlaveChannels = new ConcurrentHashMap<>();
-        termAndSlaveChannels.put(currentTerm, new CopyOnWriteArrayList<>());
-        term = Long.parseLong(currentTerm);
         Properties clusterProperties = PropertyUtil.getProperties(Cons.CLU_PRO);
+        String localNode = clusterProperties.getProperty("localRaftNode");
+        LOGGER.info("server:'{}' is starting", localNode);
+        term = Long.parseLong(LogService.getTerm());
         String[] remoteNodeIps = clusterProperties.getProperty("peerRaftNodes").split(Cons.COMMA);
         HALF_COUNT = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
-        role = Cons.FOLLOWER;
-        String[] localIpAndPort = clusterProperties.getProperty("localRaftNode").split(Cons.COLON);
+        String[] localIpAndPort = localNode.split(Cons.COLON);
         NettyServer.start(localIpAndPort[0], Integer.parseInt(localIpAndPort[1]));
         TIMEOUT_TO_ELECTION_EXECUTOR = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new DelayQueue(),
                 new ThreadFactoryImpl("timeout to election"));
         TIMEOUT_TO_ELECTION_EXECUTOR.execute(() -> {
         });
-        electionTask = new DelayTask(() -> startElection(remoteNodeIps), ThreadLocalRandom.current().nextInt(12000, 18000));
+        electionTask = new DelayTask(() -> {
+            LOGGER.info("heartbeat timed out, initiate an election");
+            startElection(remoteNodeIps);
+        }, ThreadLocalRandom.current().nextInt(12000, 18000));
         TIMEOUT_TO_ELECTION_EXECUTOR.execute(electionTask);
     }
+
+
 
     /**
      * 发起选举
@@ -160,6 +165,7 @@ public class RaftNode {
             if (countDownLatch.await(ThreadLocalRandom.current().nextLong(3500, 5000), TimeUnit.MILLISECONDS)) {
                 upgradToLeader(Long.toString(term));
             } else {
+                LOGGER.info("The election timed out, re-launch");
                 startElection(remoteNodeIps);
             }
         } catch (InterruptedException e) {
@@ -188,11 +194,15 @@ public class RaftNode {
      * 断开旧连接并从容器中移除,增加装新连接的容器,发起选举时会执行此方法
      */
     private static void updateTermAndSlaveChannels() {
-        List<Channel> oldChannels = termAndSlaveChannels.remove(Long.toString(term));
-        term = LogService.increaseCurrentTerm(term);
-        for (Channel channel : oldChannels) {
-            channel.close();
+        if (termAndSlaveChannels != null) {
+            List<Channel> oldChannels = termAndSlaveChannels.remove(Long.toString(term));
+            for (Channel channel : oldChannels) {
+                channel.close();
+            }
+        } else {
+            termAndSlaveChannels = new ConcurrentHashMap<>();
         }
+        term = LogService.increaseCurrentTerm(term);
         termAndSlaveChannels.put(Long.toString(term), new CopyOnWriteArrayList<>());
     }
 
@@ -201,6 +211,7 @@ public class RaftNode {
      * 升级成主节点
      */
     private static void upgradToLeader(String term) {
+        LOGGER.info("successful election, upgrade to the master node");
         role = Cons.LEADER;
         CoreHandler.slaves = termAndSlaveChannels.get(term);
         heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
@@ -229,6 +240,7 @@ public class RaftNode {
      * @param newTerm 新任期
      */
     public static void downgradeToSlaveNode(long newTerm) {
+        LOGGER.info("downgrade to slave node");
         long preTerm = RaftNode.updateTerm(newTerm);
         List<Channel> oldChannels = termAndSlaveChannels.remove(Long.toString(preTerm));
         for (Channel channel : oldChannels) {
@@ -238,8 +250,11 @@ public class RaftNode {
         heartBeatExecutor.shutdownNow();
         CoreHandler.resetReplicationThreadPool();
         LogService.clearUncommittedEntry();
-        electionTask = new DelayTask(() -> startElection(PropertyUtil.getProperties(Cons.CLU_PRO)
-                .getProperty("localRaftNode").split(Cons.COLON)), ThreadLocalRandom.current().nextInt(12000, 18000));
+        electionTask = new DelayTask(() -> {
+            LOGGER.info("heartbeat timed out, initiate an election");
+            startElection(PropertyUtil.getProperties(Cons.CLU_PRO)
+                    .getProperty("localRaftNode").split(Cons.COLON));
+        }, ThreadLocalRandom.current().nextInt(12000, 18000));
         TIMEOUT_TO_ELECTION_EXECUTOR.execute(electionTask);
     }
 
@@ -304,6 +319,15 @@ public class RaftNode {
         long preTerm = RaftNode.term;
         RaftNode.term = term;
         return preTerm;
+    }
+
+
+    /**
+     * 启动raft节点
+     */
+    public static void start() {
+        LogoUtil.printLogo();
+        LOGGER.info("registry server started successfully");
     }
 
 }

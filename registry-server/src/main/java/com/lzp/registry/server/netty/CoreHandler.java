@@ -99,15 +99,14 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             handleClientReq(command, channelHandlerContext);
         } else if (Cons.RPC_REPLICATION.equals(command[1])) {
             handleReplicationReq(command, channelHandlerContext);
+        } else if (Cons.RPC_COMMIT.equals(command[1])) {
+            LogService.commitFirstUncommittedLog();
         } else if (Cons.RPC_SYNC.equals(command[1])) {
             handleSync(Long.parseLong(command[2]), channelHandlerContext);
-        } else if (Cons.RPC_ASKFORVOTE.equals(command[1])) {
-            voteIfAppropriate(channelHandlerContext, command);
         } else {
-            //TODO COMMIT
+            //Cons.RPC_ASKFORVOTE.equals(command[1])
+            voteIfAppropriate(channelHandlerContext, command);
         }
-
-
     }
 
     /**
