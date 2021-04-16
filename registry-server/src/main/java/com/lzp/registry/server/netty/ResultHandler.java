@@ -33,11 +33,19 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
         String[] commandIdAndResult = new String(bytes).split(Cons.COLON);
-        if (Cons.RPC_TOBESLAVE.equals(commandIdAndResult[0])) {
+
+        if (Cons.YES.equals(commandIdAndResult[1])) {
+            RaftNode.cidAndResultMap.get(commandIdAndResult[0]).countDown();
+        } else if (Cons.RPC_TOBESLAVE.equals(commandIdAndResult[0])) {
             //选举时,远端节点任期比本端节点新,会发这个消息
             RaftNode.downgradeToSlaveNode(Long.parseLong(commandIdAndResult[1]));
-        } else if (Cons.YES.equals(commandIdAndResult[1])) {
-            RaftNode.cidAndResultMap.get(commandIdAndResult[0]).countDown();
+        } else if (Cons.COPY_LOG_REQ.equals(commandIdAndResult[0])) {
+            //放到server的从reactor中执行,以满足单线程模型
+            NettyServer.workerGroup.execute(() -> sendOwnState(channelHandlerContext));
         }
+    }
+
+    private void sendOwnState(ChannelHandlerContext channelHandlerContext) {
+        channelHandlerContext.writeAndFlush()
     }
 }

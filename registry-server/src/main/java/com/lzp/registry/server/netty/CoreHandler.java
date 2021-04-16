@@ -103,9 +103,11 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             LogService.commitFirstUncommittedLog();
         } else if (Cons.RPC_SYNC.equals(command[1])) {
             handleSync(Long.parseLong(command[2]), channelHandlerContext);
-        } else {
-            //Cons.RPC_ASKFORVOTE.equals(command[1])
+        } else if (Cons.RPC_ASKFORVOTE.equals(command[1])){
             voteIfAppropriate(channelHandlerContext, command);
+        } else {
+            //Cons.COPY_LOG_REPLY.equals(command[1])
+            syncLog()
         }
     }
 
@@ -119,35 +121,38 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         如果不能接上,则需要先同步主节点的所有日志再复制这一条日志
         * */
         if (logMustBeConsistent) {
-            appendUncommittedLogAndReturnTrue(command, channelHandlerContext);
+            appendUncommittedLogAndReturnYes(command, channelHandlerContext);
         } else if (Long.parseLong(command[3]) == LogService.getCommittedLogIndex() && Long
                 .parseLong(command[4]) - 1 == LogService.getUncommittedLogSize()) {
             logMustBeConsistent = true;
-            appendUncommittedLogAndReturnTrue(command, channelHandlerContext);
+            appendUncommittedLogAndReturnYes(command, channelHandlerContext);
         } else {
-            SINGLE_THREAD_POOL.execute(() -> waitUntilSyncThenReturnTrue(command, channelHandlerContext));
+            SINGLE_THREAD_POOL.execute(() -> waitUntilSyncThenReturnYes(command, channelHandlerContext));
         }
     }
 
     /**
      * 添加日志并且返回成功复制消息
      */
-    private void appendUncommittedLogAndReturnTrue(String[] command, ChannelHandlerContext channelHandlerContext) {
+    private void appendUncommittedLogAndReturnYes(String[] command, ChannelHandlerContext channelHandlerContext) {
         LogService.appendUnCommittedLog(command[2]);
-        channelHandlerContext.writeAndFlush(command[0] + Cons.COLON + Cons.TRUE);
+        channelHandlerContext.writeAndFlush(command[0] + Cons.COLON + Cons.YES);
     }
 
     /**
      * 等待同步日志成功,然后回日志复制成功结果
      */
-    private synchronized void waitUntilSyncThenReturnTrue(String[] command, ChannelHandlerContext channelHandlerContext) {
-        while (!logMustBeConsistent) {
-            try {
-                this.wait();
-            } catch (InterruptedException ignored) {
+    private synchronized void waitUntilSyncThenReturnYes(String[] command, ChannelHandlerContext channelHandlerContext) {
+        if (!logMustBeConsistent) {
+            channelHandlerContext.writeAndFlush((Cons.COPY_LOG_REQ + Cons.COLON + LogService.getCommittedLogIndex()).getBytes());
+            while (!logMustBeConsistent) {
+                try {
+                    this.wait();
+                } catch (InterruptedException ignored) {
+                }
             }
         }
-        channelHandlerContext.writeAndFlush((command[0] + Cons.COLON + Cons.TRUE).getBytes());
+        channelHandlerContext.writeAndFlush((command[0] + Cons.COLON + Cons.YES).getBytes());
     }
 
     /**

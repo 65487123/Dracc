@@ -28,6 +28,8 @@ public class Cons {
     public static final String LEADER = "LEADER";
     public static final String COMMA = ",";
     public static final String COLON = ":";
+    public static final String COPY_LOG_REQ = "cp_req";
+    public static final String COPY_LOG_REPLY = "cp_reply";
     public static final String COMMAND_SEPARATOR = "-:";
     public static final String SPECIFICORDER_SEPARATOR = "-=";
     public static final String CLU_PRO = "cluster.properties";
