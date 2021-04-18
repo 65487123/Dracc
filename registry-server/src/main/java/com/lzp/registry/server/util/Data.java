@@ -23,7 +23,7 @@ package com.lzp.registry.server.util;
  * @date: 2021/3/22 13:56
  */
 public class Data {
-    private Object object;
+    private final Object object;
 
     public Object getObject() {
         return object;

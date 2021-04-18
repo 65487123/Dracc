@@ -29,6 +29,7 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -103,13 +104,29 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             LogService.commitFirstUncommittedLog();
         } else if (Cons.RPC_SYNC.equals(command[1])) {
             handleSync(Long.parseLong(command[2]), channelHandlerContext);
-        } else if (Cons.RPC_ASKFORVOTE.equals(command[1])){
+        } else if (Cons.RPC_ASKFORVOTE.equals(command[1])) {
             voteIfAppropriate(channelHandlerContext, command);
         } else {
             //Cons.COPY_LOG_REPLY.equals(command[1])
-            syncLog()
+            syncLogAndStateMachine(command);
         }
     }
+
+    /**
+     * 同步日志以及状态机
+     */
+    private synchronized void syncLogAndStateMachine(String[] command) {
+        //0表示是全量同步
+        if ("0".equals(command[1])) {
+            RaftNode.fullSync(command[2], command[3], command[4].getBytes(StandardCharsets.UTF_8), command[5]);
+        } else {
+            LogService.syncUncommittedLog(command[3]);
+        }
+        logMustBeConsistent = true;
+        this.notify();
+    }
+
+
 
     /**
      * 处理日志复制请求

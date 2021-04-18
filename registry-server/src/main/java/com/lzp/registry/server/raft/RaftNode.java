@@ -23,6 +23,7 @@ import com.lzp.registry.server.netty.NettyClient;
 import com.lzp.registry.server.netty.NettyServer;
 import com.lzp.registry.server.netty.CoreHandler;
 import com.lzp.registry.server.util.CountDownLatch;
+import com.lzp.registry.server.util.DataSearialUtil;
 import com.lzp.registry.server.util.LogoUtil;
 import io.netty.channel.Channel;
 import org.slf4j.Logger;
@@ -278,6 +279,15 @@ public class RaftNode {
                 }
             }
         });
+    }
+
+    /**
+     * 全量同步(日志、状态机等),用作主从失连恢复后数据同步
+     */
+    public static void fullSync(String committedLog, String uncommittedLog, byte[] dataObject, String coveredIndex) {
+        LogService.syncCommittedLog(committedLog, coveredIndex);
+        LogService.syncUncommittedLog(uncommittedLog);
+        data = (Map<String, Set<String>>) DataSearialUtil.deserialize(dataObject).getObject();
     }
 
 
