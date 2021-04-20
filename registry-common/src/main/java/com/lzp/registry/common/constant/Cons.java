@@ -16,6 +16,8 @@
 
 package com.lzp.registry.common.constant;
 
+import com.lzp.registry.common.util.PropertyUtil;
+
 /**
  * Description:常量类
  *
@@ -49,4 +51,14 @@ public class Cons {
     public static final String TRUE = "true";
     public static final String EXCEPTION = "E";
     public static final String CLUSTER_DOWN_MESSAGE = "Less than half of the nodes survive, and the cluster does not provide services";
+    public static final String ROOT_PATH;
+
+    static {
+        String path = PropertyUtil.class.getProtectionDomain().getCodeSource().getLocation().getPath();
+        if (System.getProperty("os.name").contains("dows")) {
+            path = path.substring(5);
+        }
+        ROOT_PATH = path.substring(0, path.lastIndexOf("registry-server"));
+    }
+
 }

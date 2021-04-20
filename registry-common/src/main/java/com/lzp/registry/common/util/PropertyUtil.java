@@ -17,10 +17,11 @@
 package com.lzp.registry.common.util;
 
 
+import com.lzp.registry.common.constant.Cons;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.InputStream;
+import java.io.FileInputStream;
 import java.util.Properties;
 
 /**
@@ -31,15 +32,18 @@ import java.util.Properties;
  */
 public class PropertyUtil {
     private static final Logger LOGGER = LoggerFactory.getLogger(PropertyUtil.class);
+    private static final String PREFIX = Cons.ROOT_PATH + "config/";
+
 
     public static Properties getProperties(String fileName) {
         Properties properties = new Properties();
-        InputStream in = PropertyUtil.class.getClassLoader().getResourceAsStream("config/" + fileName);
         try {
-            properties.load(in);
+            properties.load(new FileInputStream(PREFIX + fileName));
         } catch (Exception e) {
-            LOGGER.error("load zprpc.properties failed", e);
+            LOGGER.error("load {} failed", fileName, e);
         }
         return properties;
     }
+
+
 }

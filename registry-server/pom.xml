@@ -49,6 +49,51 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+
+            <!--<plugin>
+                &lt;!&ndash;必须使用apache的打包工具，因为spring的打包插件功能不够&ndash;&gt;
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <addClasspath>true</addClasspath>
+                            <classpathPrefix>lib</classpathPrefix>
+                            &lt;!&ndash; 程序启动入口 &ndash;&gt;
+                            <mainClass>com.lzp.registry.server.Main</mainClass>
+                        </manifest>
+                        <manifestEntries>
+                            <Class-Path>./</Class-Path>
+                        </manifestEntries>
+                    </archive>
+                    <excludes>
+                        &lt;!&ndash;设置不打进jar包的文件&ndash;&gt;
+                        <exclude>*.properties</exclude>
+                        <exclude>*.bat</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>-->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>make-zip</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <!--配置文件中定义的id不包含到最终文件名里-->
+                            <appendAssemblyId>false</appendAssemblyId>
+                            <descriptors>
+                                <!--配置文件所在的位置-->
+                                <descriptor>src/main/resources/assembly.xml</descriptor>
+                            </descriptors>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
