@@ -25,9 +25,6 @@ import com.lzp.registry.common.util.PropertyUtil;
  * @date: 2021/3/17 16:26
  */
 public class Cons {
-    public static final String FOLLOWER = "FOLLOWER";
-    public static final String CANDIDATE = "CANDIDATE";
-    public static final String LEADER = "LEADER";
     public static final String COMMA = ",";
     public static final String COLON = ":";
     public static final String COPY_LOG_REQ = "cp_req";

@@ -17,6 +17,7 @@
 package com.lzp.registry.server.raft;
 
 import com.lzp.registry.common.constant.Cons;
+import com.lzp.registry.common.constant.Role;
 import com.lzp.registry.common.util.PropertyUtil;
 import com.lzp.registry.common.util.ThreadFactoryImpl;
 import com.lzp.registry.server.netty.NettyClient;
@@ -77,7 +78,7 @@ public class RaftNode {
     /**
      * 当前节点角色
      */
-    private static volatile String role = Cons.FOLLOWER;
+    private static volatile String role = Role.FOLLOWER;
 
     /**
      * 执行超时选举任务的线程池
@@ -151,7 +152,7 @@ public class RaftNode {
      */
     private static void startElection(String[] remoteNodeIps) {
         updateTermAndSlaveChannels();
-        role = Cons.CANDIDATE;
+        role = Role.CANDIDATE;
         String voteRequestId = getCommandId();
         CountDownLatch countDownLatch = new CountDownLatch(HALF_COUNT);
         cidAndResultMap.put(voteRequestId, countDownLatch);
@@ -202,7 +203,7 @@ public class RaftNode {
         } else {
             termAndSlaveChannels = new ConcurrentHashMap<>();
         }
-        term = LogService.increaseCurrentTerm(term);
+        LogService.updateCurrentTerm(Long.toString(++term));
         termAndSlaveChannels.put(Long.toString(term), new CopyOnWriteArrayList<>());
     }
 
@@ -212,7 +213,7 @@ public class RaftNode {
      */
     private static void upgradToLeader(String term) {
         LOGGER.info("successful election, upgrade to the master node");
-        role = Cons.LEADER;
+        role = Role.LEADER;
         CoreHandler.slaves = termAndSlaveChannels.get(term);
         heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(), new ThreadFactoryImpl("heatbeat"));
@@ -246,7 +247,7 @@ public class RaftNode {
         for (Channel channel : oldChannels) {
             channel.close();
         }
-        role = Cons.FOLLOWER;
+        role = Role.FOLLOWER;
         heartBeatExecutor.shutdownNow();
         CoreHandler.resetReplicationThreadPool();
         LogService.clearUncommittedEntry();
@@ -259,13 +260,12 @@ public class RaftNode {
     }
 
 
-
     /**
      * 监听channel,当channel关闭后,根据具体情况选择是否重连
      */
     private static void addListenerOnChannel(Channel channel, long term) {
         channel.closeFuture().addListener(future -> {
-            if (Cons.LEADER.equals(RaftNode.getRole()) && RaftNode.term == term) {
+            if (Role.LEADER.equals(RaftNode.getRole()) && RaftNode.term == term) {
                 InetSocketAddress inetSocketAddress = (InetSocketAddress) channel.remoteAddress();
                 Channel newChannel = NettyClient.getChannelAndAskForSync(inetSocketAddress.getAddress()
                         .getHostAddress(), inetSocketAddress.getPort(), term);
@@ -316,8 +316,9 @@ public class RaftNode {
     /**
      * 增长当前任期
      */
-    public static void increaseTerm() {
-        term = LogService.increaseCurrentTerm(term);
+    public static void updateTerm(String newTerm) {
+        LogService.updateCurrentTerm(newTerm);
+        term = Long.parseLong(newTerm);
     }
 
     /**

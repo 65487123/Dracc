@@ -28,6 +28,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 /**
  * Description:提供写日志的一些api
  *
@@ -145,17 +147,14 @@ public class LogService {
 
 
     /**
-     * 更新当前raftnode的term并返回更新后的值
+     * 更新当前raftnode的term
      */
-    public static long increaseCurrentTerm(long currentTerm) {
-        long newTerm = ++currentTerm;
+    public static void updateCurrentTerm(String newTerm) {
         try (BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(new FileOutputStream(Cons.ROOT_PATH + "persistence/term.txt"))) {
-            bufferedOutputStream.write(Long.toString(newTerm).getBytes());
+            bufferedOutputStream.write(newTerm.getBytes(UTF_8));
             bufferedOutputStream.flush();
-            return newTerm;
         } catch (IOException e) {
-            LOGGER.error(e.getMessage(), e);
-            return increaseCurrentTerm(currentTerm);
+            updateCurrentTerm(newTerm);
         }
     }
 
@@ -201,7 +200,7 @@ public class LogService {
         try (BufferedInputStream bufferedInputStream = new BufferedInputStream(new FileInputStream(Cons.ROOT_PATH + "persistence/uncommittedEntry.txt"))) {
             byte[] bytes = new byte[bufferedInputStream.available()];
             bufferedInputStream.read(bytes);
-            return new String(bytes);
+            return new String(bytes, UTF_8);
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
             return "null";
@@ -215,7 +214,7 @@ public class LogService {
         try (BufferedInputStream bufferedInputStream = new BufferedInputStream(new FileInputStream(Cons.ROOT_PATH + "persistence/committedEntry.txt"))) {
             byte[] bytes = new byte[bufferedInputStream.available()];
             bufferedInputStream.read(bytes);
-            return new String(bytes, StandardCharsets.UTF_8);
+            return new String(bytes, UTF_8);
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
             return "null";

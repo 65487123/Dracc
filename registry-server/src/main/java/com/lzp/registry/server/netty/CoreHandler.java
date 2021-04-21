@@ -17,6 +17,7 @@
 package com.lzp.registry.server.netty;
 
 import com.lzp.registry.common.constant.Cons;
+import com.lzp.registry.common.constant.Role;
 import com.lzp.registry.common.util.CommonUtil;
 import com.lzp.registry.common.util.ThreadFactoryImpl;
 import com.lzp.registry.server.raft.LogService;
@@ -29,7 +30,6 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +38,8 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 
 /**
@@ -94,7 +96,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
-        String[] command = new String(bytes).split(Cons.COMMAND_SEPARATOR);
+        String[] command = new String(bytes, UTF_8).split(Cons.COMMAND_SEPARATOR);
         //分支不是特别多的情况下,if/else性能比switch要高,尤其是把高频率的分支放在前面
         if (Cons.RPC_FROMCLIENT.equals(command[1])) {
             handleClientReq(command, channelHandlerContext);
@@ -103,7 +105,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else if (Cons.RPC_COMMIT.equals(command[1])) {
             LogService.commitFirstUncommittedLog();
         } else if (Cons.RPC_SYNC.equals(command[1])) {
-            handleSync(Long.parseLong(command[2]), channelHandlerContext);
+            handleSync(Long.parseLong(command[2]));
         } else if (Cons.RPC_ASKFORVOTE.equals(command[1])) {
             voteIfAppropriate(channelHandlerContext, command);
         } else {
@@ -118,7 +120,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     private synchronized void syncLogAndStateMachine(String[] command) {
         //0表示是全量同步
         if ("0".equals(command[1])) {
-            RaftNode.fullSync(command[2], command[3], command[4].getBytes(StandardCharsets.UTF_8), command[5]);
+            RaftNode.fullSync(command[2], command[3], command[4].getBytes(UTF_8), command[5]);
         } else {
             LogService.syncUncommittedLog(command[3]);
         }
@@ -153,7 +155,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private void appendUncommittedLogAndReturnYes(String[] command, ChannelHandlerContext channelHandlerContext) {
         LogService.appendUnCommittedLog(command[2]);
-        channelHandlerContext.writeAndFlush(command[0] + Cons.COLON + Cons.YES);
+        channelHandlerContext.writeAndFlush((command[0] + Cons.COLON + Cons.YES).getBytes(UTF_8));
     }
 
     /**
@@ -161,7 +163,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private synchronized void waitUntilSyncThenReturnYes(String[] command, ChannelHandlerContext channelHandlerContext) {
         if (!logMustBeConsistent) {
-            channelHandlerContext.writeAndFlush((Cons.COPY_LOG_REQ + Cons.COLON + LogService.getCommittedLogIndex()).getBytes());
+            channelHandlerContext.writeAndFlush((Cons.COPY_LOG_REQ + Cons.COLON + LogService
+                    .getCommittedLogIndex()).getBytes(UTF_8));
             while (!logMustBeConsistent) {
                 try {
                     this.wait();
@@ -169,22 +172,22 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 }
             }
         }
-        channelHandlerContext.writeAndFlush((command[0] + Cons.COLON + Cons.YES).getBytes());
+        channelHandlerContext.writeAndFlush((command[0] + Cons.COLON + Cons.YES).getBytes(UTF_8));
     }
 
     /**
      * 收到投票请求,如果合适就投对方一票
      */
     private void voteIfAppropriate(ChannelHandlerContext channelHandlerContext, String[] command) {
-        if (Cons.FOLLOWER.equals(RaftNode.getRole())) {
+        if (Role.FOLLOWER.equals(RaftNode.getRole())) {
             long opposingTerm = Long.parseLong(command[2]);
             if (opposingTerm > RaftNode.term && Long.parseLong(command[3]) >= LogService.getCommittedLogIndex()
                     && Long.parseLong(command[4]) >= LogService.getUncommittedLogSize()) {
-                RaftNode.increaseTerm();
+                RaftNode.updateTerm(opposingTerm);
                 RaftNode.ResetTimer();
-                channelHandlerContext.writeAndFlush((command[0] + Cons.COLON + Cons.YES).getBytes());
+                channelHandlerContext.writeAndFlush((command[0] + Cons.COLON + Cons.YES).getBytes(UTF_8));
             } else if (opposingTerm < RaftNode.term) {
-                channelHandlerContext.writeAndFlush((Cons.RPC_TOBESLAVE + Cons.COLON + LogService.getTerm()).getBytes());
+                channelHandlerContext.writeAndFlush((Cons.RPC_TOBESLAVE + Cons.COLON + LogService.getTerm()).getBytes(UTF_8));
             }
         }
     }
@@ -214,10 +217,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     private void handleClientReq(String[] command, ChannelHandlerContext channelHandlerContext) {
         //当少于半数节点存活,整个集群是不可用的,直接返回异常
         if (RaftNode.termAndSlaveChannels.get(String.valueOf(RaftNode.term)).size() < RaftNode.HALF_COUNT) {
-            channelHandlerContext.writeAndFlush((Cons.EXCEPTION + Cons.CLUSTER_DOWN_MESSAGE).getBytes());
+            channelHandlerContext.writeAndFlush((Cons.EXCEPTION + Cons.CLUSTER_DOWN_MESSAGE).getBytes(UTF_8));
         } else {
             if (Cons.GET.equals(command[0])) {
-                channelHandlerContext.writeAndFlush(CommonUtil.serial(RaftNode.data.get(command[2])).getBytes());
+                channelHandlerContext.writeAndFlush(CommonUtil.serial(RaftNode.data.get(command[2])).getBytes(UTF_8));
             } else {
                 handleWriteReq(command, channelHandlerContext);
             }
@@ -242,7 +245,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             }
             repilicationThreadPool.execute(() -> receiveResponseAndMakeDecision(countDownLatch, command, channelHandlerContext));
         } else {
-            channelHandlerContext.writeAndFlush(Cons.FALSE.getBytes());
+            channelHandlerContext.writeAndFlush(Cons.FALSE.getBytes(UTF_8));
         }
     }
 
@@ -282,9 +285,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             }
             set.remove(command[3]);
         }
-        channelHandlerContext.writeAndFlush(Cons.TRUE);
+        channelHandlerContext.writeAndFlush(Cons.TRUE.getBytes(UTF_8));
         for (Channel channel : slaves) {
-            channel.writeAndFlush("x" + Cons.COMMAND_SEPARATOR + Cons.RPC_COMMIT + Cons.COMMAND_SEPARATOR);
+            channel.writeAndFlush(("x" + Cons.COMMAND_SEPARATOR + Cons
+                    .RPC_COMMIT + Cons.COMMAND_SEPARATOR).getBytes(UTF_8));
         }
     }
 
@@ -292,10 +296,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 处理同步请求
      */
-    private void handleSync(long opposingTerm, ChannelHandlerContext channelHandlerContext) {
+    private void handleSync(long opposingTerm) {
         //失连恢复后,数据(未提交数据)可能不一致
         logMustBeConsistent = false;
-        if (Cons.FOLLOWER.equals(RaftNode.getRole())) {
+        if (Role.FOLLOWER.equals(RaftNode.getRole())) {
             /*
             收到这个请求并且是Follower的情况
             1、挂掉后,重启server

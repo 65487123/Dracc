@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
  */
 public class NettyServer {
     public static EventLoopGroup workerGroup = new NioEventLoopGroup(1);
+    private static EventLoopGroup bossGroup = new NioEventLoopGroup(1);
     private final static Logger LOGGER = LoggerFactory.getLogger(NettyServer.class);
 
     /**
@@ -43,7 +44,7 @@ public class NettyServer {
      */
     public static void start(String ip, int port) {
         try {
-            new ServerBootstrap().group(new NioEventLoopGroup(1), workerGroup).channel(NioServerSocketChannel.class).childHandler(new ChannelInitializer() {
+            new ServerBootstrap().group(bossGroup, workerGroup).channel(NioServerSocketChannel.class).childHandler(new ChannelInitializer() {
                 @Override
                 protected void initChannel(Channel channel) {
                     channel.pipeline().addLast(new IdleStateHandler(15, Integer.MAX_VALUE, Integer.MAX_VALUE))
