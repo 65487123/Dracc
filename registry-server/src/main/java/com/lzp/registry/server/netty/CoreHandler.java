@@ -179,14 +179,21 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 收到投票请求,如果合适就投对方一票
      */
     private void voteIfAppropriate(ChannelHandlerContext channelHandlerContext, String[] command) {
+        long opposingTerm = Long.parseLong(command[2]);
         if (Role.FOLLOWER.equals(RaftNode.getRole())) {
-            long opposingTerm = Long.parseLong(command[2]);
             if (opposingTerm > RaftNode.term && Long.parseLong(command[3]) >= LogService.getCommittedLogIndex()
                     && Long.parseLong(command[4]) >= LogService.getUncommittedLogSize()) {
                 RaftNode.updateTerm(opposingTerm);
                 RaftNode.ResetTimer();
                 channelHandlerContext.writeAndFlush((command[0] + Cons.COLON + Cons.YES).getBytes(UTF_8));
             } else if (opposingTerm < RaftNode.term) {
+                channelHandlerContext.writeAndFlush((Cons.RPC_TOBESLAVE + Cons.COLON + LogService.getTerm()).getBytes(UTF_8));
+            }
+        } else if (Role.LEADER.equals(RaftNode.getRole())) {
+            if (opposingTerm > RaftNode.term) {
+                //如果对方能成功竞选,少这一票也能竞选成功,所以这里就先不去判断日志然后投票了
+                RaftNode.downgradeToSlaveNode(opposingTerm);
+            } else {
                 channelHandlerContext.writeAndFlush((Cons.RPC_TOBESLAVE + Cons.COLON + LogService.getTerm()).getBytes(UTF_8));
             }
         }
