@@ -49,8 +49,8 @@ public class RaftNode {
     private static class DelayTask implements Delayed,Runnable{
 
         Runnable runnable;
-        long deadline;
-        long delay;
+        volatile long deadline;
+        volatile long delay;
 
         DelayTask(Runnable runnable, long delay) {
             this.runnable = runnable;
@@ -83,7 +83,7 @@ public class RaftNode {
     /**
      * 执行超时选举任务的线程池
      */
-    private static final ExecutorService TIMEOUT_TO_ELECTION_EXECUTOR;
+    private static ExecutorService timeoutToElectionExecutor;
 
     /**
      * 执行心跳任务的线程池
@@ -103,7 +103,7 @@ public class RaftNode {
     /**
      * 任期
      */
-    public static long term;
+    public static volatile long term;
 
     /**
      * 主节点才有值
@@ -134,25 +134,31 @@ public class RaftNode {
         HALF_COUNT = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
         String[] localIpAndPort = localNode.split(Cons.COLON);
         NettyServer.start(localIpAndPort[0], Integer.parseInt(localIpAndPort[1]));
-        TIMEOUT_TO_ELECTION_EXECUTOR = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new DelayQueue(),
-                new ThreadFactoryImpl("timeout to election"));
-        TIMEOUT_TO_ELECTION_EXECUTOR.execute(() -> {
-        });
+        resetThreadPoolForPerformElectTasks();
         electionTask = new DelayTask(() -> {
             LOGGER.info("heartbeat timed out, initiate an election");
             startElection(remoteNodeIps);
         }, ThreadLocalRandom.current().nextInt(12000, 18000));
-        TIMEOUT_TO_ELECTION_EXECUTOR.execute(electionTask);
+        timeoutToElectionExecutor.execute(electionTask);
     }
 
 
+    /**
+     * 重置执行选举任务的线程池
+     */
+    private static void resetThreadPoolForPerformElectTasks(){
+        timeoutToElectionExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new DelayQueue(),
+                new ThreadFactoryImpl("timeout to election"));
+        timeoutToElectionExecutor.execute(() -> {
+        });
+    }
 
     /**
      * 发起选举
      */
     private static void startElection(String[] remoteNodeIps) {
-        updateTermAndSlaveChannels();
         role = Role.CANDIDATE;
+        updateTermAndSlaveChannels();
         String voteRequestId = getCommandId();
         CountDownLatch countDownLatch = new CountDownLatch(HALF_COUNT);
         cidAndResultMap.put(voteRequestId, countDownLatch);
@@ -203,7 +209,7 @@ public class RaftNode {
         } else {
             termAndSlaveChannels = new ConcurrentHashMap<>();
         }
-        LogService.updateCurrentTerm(Long.toString(++term));
+        increaseTerm();
         termAndSlaveChannels.put(Long.toString(term), new CopyOnWriteArrayList<>());
     }
 
@@ -235,14 +241,14 @@ public class RaftNode {
 
     /**
      * 当主节点收到更高任期的消息时(网络分区恢复后)或者候选者发现已经有leader了,
-     * 或者遇到特殊情况,为了防止出现数据不一致,
+     * 或者遇到其他特殊情况,为了防止出现数据不一致,
      * 会执行此方法,降级为从节点
      *
      * @param newTerm 新任期
      */
-    public static void downgradeToSlaveNode(long newTerm) {
+    public static void downgradeToSlaveNode(boolean needClearUncommitLog, long newTerm) {
         LOGGER.info("downgrade to slave node");
-        long preTerm = RaftNode.updateTerm(newTerm);
+        long preTerm = RaftNode.updateTerm(term, newTerm);
         List<Channel> oldChannels = termAndSlaveChannels.remove(Long.toString(preTerm));
         for (Channel channel : oldChannels) {
             channel.close();
@@ -250,13 +256,13 @@ public class RaftNode {
         role = Role.FOLLOWER;
         heartBeatExecutor.shutdownNow();
         CoreHandler.resetReplicationThreadPool();
-        LogService.clearUncommittedEntry();
-        electionTask = new DelayTask(() -> {
-            LOGGER.info("heartbeat timed out, initiate an election");
-            startElection(PropertyUtil.getProperties(Cons.CLU_PRO)
-                    .getProperty("localRaftNode").split(Cons.COLON));
-        }, ThreadLocalRandom.current().nextInt(12000, 18000));
-        TIMEOUT_TO_ELECTION_EXECUTOR.execute(electionTask);
+        if (needClearUncommitLog) {
+            LogService.clearUncommittedEntry();
+        }
+        timeoutToElectionExecutor.shutdownNow();
+        resetThreadPoolForPerformElectTasks();
+        resetTimer();
+        timeoutToElectionExecutor.execute(electionTask);
     }
 
 
@@ -301,7 +307,7 @@ public class RaftNode {
     /**
      * 重置计时器
      */
-    public static void ResetTimer() {
+    public static void resetTimer() {
         electionTask.deadline = System.currentTimeMillis() + electionTask.delay;
     }
 
@@ -314,20 +320,25 @@ public class RaftNode {
 
 
     /**
-     * 增长当前任期
+     * 增长当前任期,只有执行选举任务时会调用
      */
-    public static void updateTerm(String newTerm) {
-        LogService.updateCurrentTerm(newTerm);
-        term = Long.parseLong(newTerm);
+    public static synchronized void increaseTerm() {
+        updateTerm(term, term + 1);
     }
 
     /**
      * 更新当前任期
+     *
      * @return 原本的任期
      */
-    public static long updateTerm(long term) {
-        long preTerm = RaftNode.term;
-        RaftNode.term = term;
+    public static synchronized long updateTerm(long preTerm, long newTerm) {
+        if (preTerm != term) {
+            //进到这里,说明执行了心跳超时选举任务,需要终止
+            downgradeToSlaveNode(false, newTerm);
+        } else {
+            LogService.updateCurrentTerm(Long.toString(newTerm));
+            RaftNode.term = newTerm;
+        }
         return preTerm;
     }
 

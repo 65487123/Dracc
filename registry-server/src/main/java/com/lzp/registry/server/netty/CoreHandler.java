@@ -183,17 +183,19 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         if (Role.FOLLOWER.equals(RaftNode.getRole())) {
             if (opposingTerm > RaftNode.term && Long.parseLong(command[3]) >= LogService.getCommittedLogIndex()
                     && Long.parseLong(command[4]) >= LogService.getUncommittedLogSize()) {
-                RaftNode.updateTerm(opposingTerm);
-                RaftNode.ResetTimer();
+                RaftNode.updateTerm(RaftNode.term, opposingTerm);
+                RaftNode.resetTimer();
                 channelHandlerContext.writeAndFlush((command[0] + Cons.COLON + Cons.YES).getBytes(UTF_8));
             } else if (opposingTerm < RaftNode.term) {
                 channelHandlerContext.writeAndFlush((Cons.RPC_TOBESLAVE + Cons.COLON + LogService.getTerm()).getBytes(UTF_8));
             }
         } else if (Role.LEADER.equals(RaftNode.getRole())) {
             if (opposingTerm > RaftNode.term) {
+                //1、网络分区后,对方处于少数派 2、对方和本节点同时发起选举,但是对方竞选失败发起下一轮选举
                 //如果对方能成功竞选,少这一票也能竞选成功,所以这里就先不去判断日志然后投票了
-                RaftNode.downgradeToSlaveNode(opposingTerm);
+                RaftNode.downgradeToSlaveNode(false, opposingTerm);
             } else {
+                //比对方先取得半数票,已经竞选成功
                 channelHandlerContext.writeAndFlush((Cons.RPC_TOBESLAVE + Cons.COLON + LogService.getTerm()).getBytes(UTF_8));
             }
         }
@@ -271,9 +273,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             commitAndReturnResult(command, channelHandlerContext);
         } else {
             //发送日志复制消息前有半数存活,发送日志复制消息时,却有连接断开了,防止数据不一致,重新选主
-            RaftNode.downgradeToSlaveNode(RaftNode.term);
+            RaftNode.downgradeToSlaveNode(false, RaftNode.term);
         }
     }
+
 
     /**
      * 提交日志、更新状态机并返回客户端结果
@@ -315,16 +318,16 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             4、网络分区后处于多数派,网络分区恢复后(这种情况,对方的任期是比自己要小的)
             */
             if (opposingTerm > RaftNode.term) {
-                RaftNode.updateTerm(opposingTerm);
+                RaftNode.updateTerm(RaftNode.term, opposingTerm);
                 LogService.clearUncommittedEntry();
-            } else {
+            } else if (opposingTerm == RaftNode.term) {
                 //说明还是同一个主
-                RaftNode.ResetTimer();
+                RaftNode.resetTimer();
             }
         } else {
-            //脑裂恢复的情况或者候选者发现已经有新主了
+            //1、脑裂恢复,本节点属于少数派 2、候选者发现已经有新主了(几乎不可能)
             if (opposingTerm >= RaftNode.term) {
-                RaftNode.downgradeToSlaveNode(opposingTerm);
+                RaftNode.downgradeToSlaveNode(true, opposingTerm);
             }
         }
     }
