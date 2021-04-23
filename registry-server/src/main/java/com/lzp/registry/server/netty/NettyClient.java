@@ -64,7 +64,7 @@ public class NettyClient implements AutoCloseable {
             } catch (InterruptedException ex) {
                 LOGGER.error(e.getMessage(), e);
             }
-            if (RaftNode.term.get() != term) {
+            if (RaftNode.term != term) {
                 return null;
             } else if (Role.LEADER.equals(RaftNode.getRole())) {
                 return getChannelAndAskForSync(ip, port, term);
@@ -88,11 +88,11 @@ public class NettyClient implements AutoCloseable {
     public static Channel getChannelAndAskForSync(String ip, int port, long term) {
         try {
             Channel channel = bootstrap.connect(ip, port).sync().channel();
-            channel.writeAndFlush(("x" + Cons.COMMAND_SEPARATOR + Cons.RPC_SYNC +
+            channel.writeAndFlush(("x" + Cons.COMMAND_SEPARATOR + Cons.RPC_SYNC_TERM +
                     Cons.COMMAND_SEPARATOR + RaftNode.term).getBytes(UTF_8));
             return channel;
         } catch (Exception e) {
-            if (Role.LEADER.equals(RaftNode.getRole()) && RaftNode.term.get() == term) {
+            if (Role.LEADER.equals(RaftNode.getRole()) && RaftNode.term == term) {
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException ex) {

@@ -57,12 +57,12 @@ import java.util.concurrent.atomic.AtomicInteger;
      /**
       * 核心线程数量
       */
-     private int coreNum;
+     private final int CORE_NUM;
 
      /**
       * 最大线程数量
       */
-     private int maxNum;
+     private final int MAX_NUM;
 
      /**
       * 阻塞队列
@@ -72,7 +72,7 @@ import java.util.concurrent.atomic.AtomicInteger;
      /**
       * 额外线程最大空闲时间
       */
-     private int timeout;
+     private int keepAliveTime;
 
      /**
       * 线程工厂
@@ -92,12 +92,12 @@ import java.util.concurrent.atomic.AtomicInteger;
      /**
       * 当前的工作线程
       */
-     private final List<Worker> workerList = new ArrayList<>(maxNum);
+     private final List<Worker> WORKER_LIST ;
 
      /**
       * 标志核心线程是否已满
       */
-     private volatile boolean coreThreadMax = false;
+     private volatile boolean coreThreadMax;
 
      /**
       * 标志额外线程是否已满
@@ -146,14 +146,10 @@ import java.util.concurrent.atomic.AtomicInteger;
                      do {
                          firstTask.run();
                          firstTask = null;
-                         if (shutdownNow) {
-                             workerList.remove(this);
-                             return;
-                         }
                      }
-                     while ((firstTask = blockingQueue.poll(timeout, TimeUnit.SECONDS)) != null);
-                     synchronized (workerList) {
-                         workerList.remove(this);
+                     while ((firstTask = blockingQueue.poll(keepAliveTime, TimeUnit.SECONDS)) != null);
+                     synchronized (WORKER_LIST) {
+                         WORKER_LIST.remove(this);
                      }
                      workerSum.decrementAndGet();
                      additionThreadMax = false;
@@ -162,12 +158,6 @@ import java.util.concurrent.atomic.AtomicInteger;
                      while (true) {
                          firstTask.run();
                          firstTask = null;
-                         if (shutdownNow) {
-                             synchronized (workerList) {
-                                 workerList.remove(this);
-                             }
-                             return;
-                         }
                          firstTask = blockingQueue.take();
                      }
                  }
@@ -177,8 +167,8 @@ import java.util.concurrent.atomic.AtomicInteger;
          }
 
          private void onCatchThrowable(Throwable t) {
-             synchronized (workerList) {
-                 workerList.remove(this);
+             synchronized (WORKER_LIST) {
+                 WORKER_LIST.remove(this);
              }
              //判断是否是调用了shutdownNow()方法而导致的线程中断
              if (!shutdownNow) {
@@ -195,8 +185,12 @@ import java.util.concurrent.atomic.AtomicInteger;
                      while (!shutdown) {
                          try {
                              if ((firstTask = blockingQueue.poll(5, TimeUnit.SECONDS)) != null) {
-                                 workerList.add(new Worker(firstTask, false));
-                                 break;
+                                 synchronized (WORKER_LIST) {
+                                     if (!shutdown) {
+                                         WORKER_LIST.add(new Worker(firstTask, false));
+                                         break;
+                                     }
+                                 }
                              }
                          } catch (InterruptedException ignored) {
                          }
@@ -231,42 +225,48 @@ import java.util.concurrent.atomic.AtomicInteger;
       *
       * @param coreNum                  核心线程数
       * @param maxNum                   最大线程数
-      * @param timeout                  额外线程最大空闲时间
+      * @param keepAliveTime                  额外线程最大空闲时间
       * @param blockingQueue            阻塞队列
       * @param threadFactory            线程工厂
       * @param rejectedExecutionHandler 拒绝策略
       */
-     public ThreadPoolExecutor(int coreNum, int maxNum, int timeout, BlockingQueue blockingQueue, ThreadFactory threadFactory, RejectExecuHandler rejectedExecutionHandler) {
-         this.coreNum = coreNum;
-         this.maxNum = maxNum;
+     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue blockingQueue, ThreadFactory threadFactory, RejectExecuHandler rejectedExecutionHandler) {
+         if (coreNum < 0 || maxNum <= 0 || maxNum
+                 < coreNum || keepAliveTime < 0) {
+             throw new IllegalArgumentException();
+         }
+         this.CORE_NUM = coreNum;
+         this.MAX_NUM = maxNum;
          this.blockingQueue = blockingQueue;
          this.threadFactory = threadFactory;
          this.rejectedExecutionHandler = rejectedExecutionHandler;
-         this.timeout = timeout;
+         this.keepAliveTime = keepAliveTime;
+         WORKER_LIST = new ArrayList<>(CORE_NUM);
+         coreThreadMax = (coreNum == 0);
      }
 
      /**
       * 线程池构造器，额外线程超时时间单位为秒
       * 使用默认拒绝策略(抛异常),默认线程工厂
       */
-     public ThreadPoolExecutor(int coreNum, int maxNum, int timeout, BlockingQueue blockingQueue) {
-         this(coreNum, maxNum, timeout, blockingQueue, Executors.defaultThreadFactory(), new AbortPolicy());
+     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue blockingQueue) {
+         this(coreNum, maxNum, keepAliveTime, blockingQueue, Executors.defaultThreadFactory(), new AbortPolicy());
      }
 
      /**
       * 线程池构造器，额外线程超时时间单位为秒
       * 使用默认线程工厂
       */
-     public ThreadPoolExecutor(int coreNum, int maxNum, int timeout, BlockingQueue blockingQueue, RejectExecuHandler rejectedExecutionHandler) {
-         this(coreNum, maxNum, timeout, blockingQueue, Executors.defaultThreadFactory(), rejectedExecutionHandler);
+     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue blockingQueue, RejectExecuHandler rejectedExecutionHandler) {
+         this(coreNum, maxNum, keepAliveTime, blockingQueue, Executors.defaultThreadFactory(), rejectedExecutionHandler);
      }
 
      /**
       * 线程池构造器，额外线程超时时间单位为秒
       * 使用默认拒绝策略(抛异常)
       */
-     public ThreadPoolExecutor(int coreNum, int maxNum, int timeout, BlockingQueue blockingQueue, ThreadFactory threadFactory) {
-         this(coreNum, maxNum, timeout, blockingQueue, threadFactory, new AbortPolicy());
+     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue blockingQueue, ThreadFactory threadFactory) {
+         this(coreNum, maxNum, keepAliveTime, blockingQueue, threadFactory, new AbortPolicy());
      }
 
      @Override
@@ -284,14 +284,14 @@ import java.util.concurrent.atomic.AtomicInteger;
      /**
       * 如果线程数量已经达到核心线程数,进入这个方法
       */
-     private void branchForCoreThreadMax(Runnable command){
+     private void branchForCoreThreadMax(Runnable command) {
          if (!blockingQueue.offer(command)) {
              //核心线程数满了,队列也满了,判断线程数是否已经达到最大线程数
              if (additionThreadMax) {
                  rejectedExecutionHandler.rejectedExecution(command, this);
              } else {
                  //没达到最大线程数,进行cas,然后看是否抢到创建额外线程的权利
-                 if (workerSum.getAndIncrement() >= maxNum) {
+                 if (workerSum.getAndIncrement() >= MAX_NUM) {
                      //没抢到,线程数量减回去
                      workerSum.getAndDecrement();
                      //执行拒绝策略前再入队一次，步成功就执行拒绝策略
@@ -300,12 +300,12 @@ import java.util.concurrent.atomic.AtomicInteger;
                      }
                  } else {
                      //抢到了创建额外线程权力
-                     if (workerSum.get() == maxNum) {
+                     if (workerSum.get() == MAX_NUM) {
                          this.additionThreadMax = true;
                      }
-                     synchronized (workerList) {
+                     synchronized (WORKER_LIST) {
                          if (!shutdown) {
-                             workerList.add(new Worker(command, true));
+                             WORKER_LIST.add(new Worker(command, true));
                          }
                      }
                  }
@@ -318,16 +318,16 @@ import java.util.concurrent.atomic.AtomicInteger;
       */
      private void branchForCoreThrNotMax(Runnable command){
          //线程数量没达到核心线程数，争抢创建核心线程机会
-         if (workerSum.getAndIncrement() >= coreNum) {
+         if (workerSum.getAndIncrement() >= CORE_NUM) {
              //没抢到创建核心线程机会，入队
              if (blockingQueue.offer(command)) {
                  workerSum.getAndDecrement();
              } else {
                  //发现队列已满，查看是否抢到创建额外线程机会
-                 if (workerSum.get() <= maxNum) {
-                     synchronized (workerList) {
+                 if (workerSum.get() <= MAX_NUM) {
+                     synchronized (WORKER_LIST) {
                          if (!shutdown) {
-                             workerList.add(new Worker(command, true));
+                             WORKER_LIST.add(new Worker(command, true));
                          }
                      }
                  } else {
@@ -337,12 +337,12 @@ import java.util.concurrent.atomic.AtomicInteger;
              }
          } else {
              //抢到创建核心线程机会
-             if (workerSum.intValue() == coreNum) {
+             if (workerSum.intValue() == CORE_NUM) {
                  this.coreThreadMax = true;
              }
-             synchronized (workerList) {
+             synchronized (WORKER_LIST) {
                  if (!shutdown) {
-                     workerList.add(new Worker(command, false));
+                     WORKER_LIST.add(new Worker(command, false));
                  }
              }
          }
@@ -352,9 +352,11 @@ import java.util.concurrent.atomic.AtomicInteger;
      public List<Runnable> shutdownNow() {
          this.shutdown = true;
          this.shutdownNow = true;
-         synchronized (workerList) {
-             for (Worker worker : workerList) {
-                 worker.thread.interrupt();
+         while (!WORKER_LIST.isEmpty()) {
+             synchronized (WORKER_LIST) {
+                 for (Worker worker : WORKER_LIST) {
+                     worker.thread.interrupt();
+                 }
              }
          }
          synchronized (this) {
@@ -370,7 +372,9 @@ import java.util.concurrent.atomic.AtomicInteger;
       * @return the number of threads
       */
      public int getPoolSize() {
-         return workerList.size();
+         synchronized (WORKER_LIST) {
+             return WORKER_LIST.size();
+         }
      }
 
 
@@ -394,30 +398,29 @@ import java.util.concurrent.atomic.AtomicInteger;
 
      @Override
      public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
-         if (shutdown && this.workerList.isEmpty()) {
+         if (shutdown && this.WORKER_LIST.isEmpty()) {
              return true;
          } else {
              synchronized (this) {
-                 if (shutdown && this.workerList.isEmpty()) {
+                 if (shutdown && this.WORKER_LIST.isEmpty()) {
                      return true;
                  } else {
                      long remainingTime = unit.toMillis(timeout);
                      long deadLine = System.currentTimeMillis() + remainingTime;
-                     while (!shutdown && remainingTime > 0) {
+                     while (!(shutdown && this.WORKER_LIST.isEmpty()) && remainingTime > 0) {
                          this.wait(remainingTime);
                          remainingTime = deadLine - System.currentTimeMillis();
                      }
                      if (remainingTime < 0) {
                          //等待的时间到了
-                         return shutdown && this.workerList.isEmpty();
+                         return shutdown && this.WORKER_LIST.isEmpty();
                      } else {
-                         //如果是调用shutDown(),被唤醒时，线程池肯定已经终止了，如果是shutDownNow(),被唤醒时不一定已经终止
-                         if (workerList.isEmpty()) {
+                         if (WORKER_LIST.isEmpty()) {
                              return true;
                          } else {
                              while (deadLine > System.currentTimeMillis()) {
                                  Thread.sleep(5);
-                                 if (workerList.isEmpty()) {
+                                 if (WORKER_LIST.isEmpty()) {
                                      return true;
                                  }
                              }
@@ -563,9 +566,9 @@ import java.util.concurrent.atomic.AtomicInteger;
       */
      protected void stop() {
          this.shutdownNow = true;
-         while (workerList.size() != 1) {
-             synchronized (workerList) {
-                 for (Worker worker : workerList) {
+         while (WORKER_LIST.size() != 1) {
+             synchronized (WORKER_LIST) {
+                 for (Worker worker : WORKER_LIST) {
                      if (worker.firstTask == null && worker.thread != Thread.currentThread()) {
                          worker.thread.interrupt();
                      }
@@ -576,6 +579,7 @@ import java.util.concurrent.atomic.AtomicInteger;
              } catch (InterruptedException ignored) {
              }
          }
+         Thread.currentThread().interrupt();
          synchronized (this) {
              this.notifyAll();
          }

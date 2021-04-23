@@ -104,8 +104,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             handleReplicationReq(command, channelHandlerContext);
         } else if (Cons.RPC_COMMIT.equals(command[1])) {
             LogService.commitFirstUncommittedLog();
-        } else if (Cons.RPC_SYNC.equals(command[1])) {
-            handleSync(Long.parseLong(command[2]));
+        } else if (Cons.RPC_SYNC_TERM.equals(command[1])) {
+            handleSyncTerm(Long.parseLong(command[2]));
         } else if (Cons.RPC_ASKFORVOTE.equals(command[1])) {
             voteIfAppropriate(channelHandlerContext, command);
         } else {
@@ -304,9 +304,9 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
 
 
     /**
-     * 处理同步请求
+     * 处理同步任期请求
      */
-    private void handleSync(long opposingTerm) {
+    private void handleSyncTerm(long opposingTerm) {
         //失连恢复后,数据(未提交数据)可能不一致
         logMustBeConsistent = false;
         if (Role.FOLLOWER.equals(RaftNode.getRole())) {

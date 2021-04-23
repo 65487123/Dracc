@@ -43,7 +43,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
             RaftNode.cidAndResultMap.get(message[0]).countDown();
         } else if (Cons.RPC_TOBESLAVE.equals(message[0])) {
             //选举时,远端节点任期比本端节点新,或者当届任期已经有主,会发这个消息
-            RaftNode.downgradeToSlaveNode(Long.parseLong(message[1]));
+            RaftNode.downgradeToSlaveNode(false, Long.parseLong(message[1]));
         } else if (Cons.COPY_LOG_REQ.equals(message[0])) {
             //放到server的从reactor中执行,以满足单线程模型
             NettyServer.workerGroup.execute(() -> sendOwnState(Long.parseLong(message[1]), channelHandlerContext));

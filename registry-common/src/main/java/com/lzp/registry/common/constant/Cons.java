@@ -38,7 +38,7 @@ public class Cons {
     public static final String RPC_FROMCLIENT = "fromcli";
     public static final String RPC_REPLICATION = "replication";
     public static final String RPC_COMMIT = "commit";
-    public static final String RPC_SYNC = "sync";
+    public static final String RPC_SYNC_TERM = "syncTerm";
     public static final String RPC_TOBESLAVE = "tobeslave";
     public static final String GET = "get";
     public static final String ADD = "add";

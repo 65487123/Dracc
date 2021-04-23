@@ -20,7 +20,6 @@ import com.lzp.registry.common.zpproto.LzpMessageEncoder;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
-import io.netty.channel.EventLoop;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
@@ -40,7 +39,7 @@ public class NettyServer {
     private final static Logger LOGGER = LoggerFactory.getLogger(NettyServer.class);
 
     /**
-     * 启动nettyserver。不考虑意外释放端口情况(就当作挂了)
+     * 启动nettyserver。不考虑意外释放端口情况(几乎是挂了)
      */
     public static void start(String ip, int port) {
         try {

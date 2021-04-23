@@ -26,6 +26,7 @@ import com.lzp.registry.server.netty.CoreHandler;
 import com.lzp.registry.server.util.CountDownLatch;
 import com.lzp.registry.server.util.DataSearialUtil;
 import com.lzp.registry.server.util.LogoUtil;
+import com.lzp.registry.server.util.ThreadPoolExecutor;
 import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,6 +92,11 @@ public class RaftNode {
     private static ExecutorService heartBeatExecutor;
 
     /**
+     * 执行重连任务的线程池r
+     */
+    private static ExecutorService reconnectionExecutor;
+
+    /**
      * 超时选举任务
      */
     private static DelayTask electionTask;
@@ -131,6 +137,7 @@ public class RaftNode {
         LOGGER.info("server:'{}' is starting", localNode);
         term = Long.parseLong(LogService.getTerm());
         String[] remoteNodeIps = clusterProperties.getProperty("peerRaftNodes").split(Cons.COMMA);
+        setReconnectionExecutor(remoteNodeIps.length,remoteNodeIps.length);
         HALF_COUNT = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
         String[] localIpAndPort = localNode.split(Cons.COLON);
         NettyServer.start(localIpAndPort[0], Integer.parseInt(localIpAndPort[1]));
@@ -144,10 +151,22 @@ public class RaftNode {
 
 
     /**
+     * 设置执行重连任务的线程池
+     */
+    private static void setReconnectionExecutor(int coreNum, int maxNum) {
+        reconnectionExecutor = new ThreadPoolExecutor(coreNum, maxNum, 0, new LinkedBlockingQueue<Runnable>() {
+            @Override
+            public boolean offer(Runnable runnable) {
+                return false;
+            }
+        }, new ThreadFactoryImpl("reconnection"));
+    }
+
+    /**
      * 重置执行选举任务的线程池
      */
     private static void resetThreadPoolForPerformElectTasks(){
-        timeoutToElectionExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new DelayQueue(),
+        timeoutToElectionExecutor = new ThreadPoolExecutor(1, 1, 0, new DelayQueue(),
                 new ThreadFactoryImpl("timeout to election"));
         timeoutToElectionExecutor.execute(() -> {
         });
@@ -162,8 +181,8 @@ public class RaftNode {
         String voteRequestId = getCommandId();
         CountDownLatch countDownLatch = new CountDownLatch(HALF_COUNT);
         cidAndResultMap.put(voteRequestId, countDownLatch);
-        ExecutorService threadPoolExecutor = new ThreadPoolExecutor(remoteNodeIps.length, remoteNodeIps.length, 0,
-                TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("ask for vote"));
+        ExecutorService threadPoolExecutor = new ThreadPoolExecutor(remoteNodeIps.length, remoteNodeIps
+                .length, 0, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("ask for vote"));
         for (String remoteNodeIp : remoteNodeIps) {
             String[] ipAndPort = remoteNodeIp.split(Cons.COLON);
             threadPoolExecutor.execute(() -> sendRpcAndSaveChannel(term, voteRequestId, ipAndPort[0], ipAndPort[1]));
@@ -221,8 +240,8 @@ public class RaftNode {
         LOGGER.info("successful election, upgrade to the master node");
         role = Role.LEADER;
         CoreHandler.slaves = termAndSlaveChannels.get(term);
-        heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(), new ThreadFactoryImpl("heatbeat"));
+        heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, new LinkedBlockingQueue<>(),
+                new ThreadFactoryImpl("heatbeat"));
         heartBeatExecutor.execute(() -> {
             while (true) {
                 byte[] emptyPackage = new byte[0];
@@ -271,18 +290,25 @@ public class RaftNode {
      */
     private static void addListenerOnChannel(Channel channel, long term) {
         channel.closeFuture().addListener(future -> {
-            if (Role.LEADER.equals(RaftNode.getRole()) && RaftNode.term == term) {
-                InetSocketAddress inetSocketAddress = (InetSocketAddress) channel.remoteAddress();
-                Channel newChannel = NettyClient.getChannelAndAskForSync(inetSocketAddress.getAddress()
-                        .getHostAddress(), inetSocketAddress.getPort(), term);
-                if (newChannel != null) {
-                    List<Channel> slaveChannels;
-                    if ((slaveChannels = termAndSlaveChannels.get(Long.toString(term))) != null) {
-                        slaveChannels.add(newChannel);
-                        addListenerOnChannel(newChannel, term);
+            reconnectionExecutor.execute(() -> {
+                List<Channel> slaveChannels;
+                if ((slaveChannels = termAndSlaveChannels.get(Long.toString(term))) != null) {
+                    //说明不是主动断开连接的(降级为从节点或者重新选举)
+                    slaveChannels.remove(channel);
+                    InetSocketAddress inetSocketAddress = (InetSocketAddress) channel.remoteAddress();
+                    Channel newChannel = NettyClient.getChannelAndAskForSync(inetSocketAddress.getAddress()
+                            .getHostAddress(), inetSocketAddress.getPort(), term);
+                    if (newChannel != null) {
+                        //再次判断存当前任期从节点的容器是否还在,如果不在了,说明任期已经更新或者自己已经不是主节点了
+                        if (termAndSlaveChannels.get(Long.toString(term)) != null) {
+                            slaveChannels.add(newChannel);
+                            addListenerOnChannel(newChannel, term);
+                        } else {
+                            newChannel.close();
+                        }
                     }
                 }
-            }
+            });
         });
     }
 
