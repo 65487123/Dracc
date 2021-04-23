@@ -225,7 +225,7 @@ import java.util.concurrent.atomic.AtomicInteger;
       *
       * @param coreNum                  核心线程数
       * @param maxNum                   最大线程数
-      * @param keepAliveTime                  额外线程最大空闲时间
+      * @param keepAliveTime            额外线程最大空闲时间
       * @param blockingQueue            阻塞队列
       * @param threadFactory            线程工厂
       * @param rejectedExecutionHandler 拒绝策略
@@ -352,14 +352,14 @@ import java.util.concurrent.atomic.AtomicInteger;
      public List<Runnable> shutdownNow() {
          this.shutdown = true;
          this.shutdownNow = true;
-         while (!WORKER_LIST.isEmpty()) {
-             synchronized (WORKER_LIST) {
-                 for (Worker worker : WORKER_LIST) {
-                     worker.thread.interrupt();
+         synchronized (this) {
+             while (!WORKER_LIST.isEmpty()) {
+                 synchronized (WORKER_LIST) {
+                     for (Worker worker : WORKER_LIST) {
+                         worker.thread.interrupt();
+                     }
                  }
              }
-         }
-         synchronized (this) {
              this.notifyAll();
          }
          return new ArrayList(blockingQueue);
@@ -566,21 +566,22 @@ import java.util.concurrent.atomic.AtomicInteger;
       */
      protected void stop() {
          this.shutdownNow = true;
-         while (WORKER_LIST.size() != 1) {
-             synchronized (WORKER_LIST) {
-                 for (Worker worker : WORKER_LIST) {
-                     if (worker.firstTask == null && worker.thread != Thread.currentThread()) {
-                         worker.thread.interrupt();
+         synchronized (this) {
+             while (WORKER_LIST.size() != 1) {
+                 synchronized (WORKER_LIST) {
+                     for (Worker worker : WORKER_LIST) {
+                         if (worker.firstTask == null && worker.thread != Thread.currentThread()) {
+                             worker.thread.interrupt();
+                         }
                      }
                  }
+                 try {
+                     Thread.sleep(10);
+                 } catch (InterruptedException ignored) {
+                 }
              }
-             try {
-                 Thread.sleep(10);
-             } catch (InterruptedException ignored) {
-             }
-         }
-         Thread.currentThread().interrupt();
-         synchronized (this) {
+             WORKER_LIST.clear();
+             Thread.currentThread().interrupt();
              this.notifyAll();
          }
      }
