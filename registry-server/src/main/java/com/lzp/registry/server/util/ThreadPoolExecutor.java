@@ -423,7 +423,7 @@ import java.util.concurrent.atomic.AtomicInteger;
                  } else {
                      while (!blockingQueue.offer(executorService::stop)) {
                          try {
-                             Thread.sleep(1);
+                             Thread.sleep(5);
                          } catch (InterruptedException ignored) {
                          }
                      }
@@ -457,7 +457,7 @@ import java.util.concurrent.atomic.AtomicInteger;
                      }
                  }
                  synchronized (thisExecutor) {
-                     this.notifyAll();
+                     thisExecutor.notifyAll();
                  }
              }
          }.start();
@@ -663,6 +663,7 @@ import java.util.concurrent.atomic.AtomicInteger;
              this.notifyAll();
          }
      }
+
 
 
      protected BlockingQueue getBlockingQueue() {
