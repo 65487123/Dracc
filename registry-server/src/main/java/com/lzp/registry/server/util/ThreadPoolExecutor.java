@@ -92,7 +92,7 @@ import java.util.concurrent.atomic.AtomicInteger;
      /**
       * 当前的工作线程
       */
-     private final List<Worker> WORKER_LIST ;
+     private final List<Worker> WORKER_LIST;
 
      /**
       * 标志核心线程是否已满
@@ -185,12 +185,8 @@ import java.util.concurrent.atomic.AtomicInteger;
                      while (!shutdown) {
                          try {
                              if ((firstTask = blockingQueue.poll(5, TimeUnit.SECONDS)) != null) {
-                                 synchronized (WORKER_LIST) {
-                                     if (!shutdown) {
-                                         WORKER_LIST.add(new Worker(firstTask, false));
-                                         break;
-                                     }
-                                 }
+                                 addWorker(firstTask, false);
+                                 break;
                              }
                          } catch (InterruptedException ignored) {
                          }
@@ -230,7 +226,7 @@ import java.util.concurrent.atomic.AtomicInteger;
       * @param threadFactory            线程工厂
       * @param rejectedExecutionHandler 拒绝策略
       */
-     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue blockingQueue, ThreadFactory threadFactory, RejectExecuHandler rejectedExecutionHandler) {
+     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue<Runnable> blockingQueue, ThreadFactory threadFactory, RejectExecuHandler rejectedExecutionHandler) {
          if (coreNum < 0 || maxNum <= 0 || maxNum
                  < coreNum || keepAliveTime < 0) {
              throw new IllegalArgumentException();
@@ -245,11 +241,12 @@ import java.util.concurrent.atomic.AtomicInteger;
          coreThreadMax = (coreNum == 0);
      }
 
+
      /**
       * 线程池构造器，额外线程超时时间单位为秒
       * 使用默认拒绝策略(抛异常),默认线程工厂
       */
-     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue blockingQueue) {
+     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue<Runnable> blockingQueue) {
          this(coreNum, maxNum, keepAliveTime, blockingQueue, Executors.defaultThreadFactory(), new AbortPolicy());
      }
 
@@ -257,7 +254,7 @@ import java.util.concurrent.atomic.AtomicInteger;
       * 线程池构造器，额外线程超时时间单位为秒
       * 使用默认线程工厂
       */
-     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue blockingQueue, RejectExecuHandler rejectedExecutionHandler) {
+     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue<Runnable> blockingQueue, RejectExecuHandler rejectedExecutionHandler) {
          this(coreNum, maxNum, keepAliveTime, blockingQueue, Executors.defaultThreadFactory(), rejectedExecutionHandler);
      }
 
@@ -265,7 +262,7 @@ import java.util.concurrent.atomic.AtomicInteger;
       * 线程池构造器，额外线程超时时间单位为秒
       * 使用默认拒绝策略(抛异常)
       */
-     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue blockingQueue, ThreadFactory threadFactory) {
+     public ThreadPoolExecutor(int coreNum, int maxNum, int keepAliveTime, BlockingQueue<Runnable> blockingQueue, ThreadFactory threadFactory) {
          this(coreNum, maxNum, keepAliveTime, blockingQueue, threadFactory, new AbortPolicy());
      }
 
@@ -285,7 +282,11 @@ import java.util.concurrent.atomic.AtomicInteger;
       * 如果线程数量已经达到核心线程数,进入这个方法
       */
      private void branchForCoreThreadMax(Runnable command) {
-         if (!blockingQueue.offer(command)) {
+         if (blockingQueue.offer(command)) {
+             if (CORE_NUM == 0) {
+                 addWorkerIfIfNecessary(command);
+             }
+         } else {
              //核心线程数满了,队列也满了,判断线程数是否已经达到最大线程数
              if (additionThreadMax) {
                  rejectedExecutionHandler.rejectedExecution(command, this);
@@ -294,7 +295,7 @@ import java.util.concurrent.atomic.AtomicInteger;
                  if (workerSum.getAndIncrement() >= MAX_NUM) {
                      //没抢到,线程数量减回去
                      workerSum.getAndDecrement();
-                     //执行拒绝策略前再入队一次，步成功就执行拒绝策略
+                     //执行拒绝策略前再入队一次，不成功就执行拒绝策略
                      if (!blockingQueue.offer(command)) {
                          rejectedExecutionHandler.rejectedExecution(command, this);
                      }
@@ -303,12 +304,46 @@ import java.util.concurrent.atomic.AtomicInteger;
                      if (workerSum.get() == MAX_NUM) {
                          this.additionThreadMax = true;
                      }
-                     synchronized (WORKER_LIST) {
-                         if (!shutdown) {
-                             WORKER_LIST.add(new Worker(command, true));
-                         }
+                     addWorker(command, true);
+                 }
+             }
+         }
+     }
+
+     private void addWorkerIfIfNecessary(Runnable command) {
+         synchronized (WORKER_LIST) {
+             if (WORKER_LIST.isEmpty() && blockingQueue.contains(command)) {
+                 if (!shutdownNow) {
+                     addWorker(() -> {
+                     }, false);
+                 }
+                 return;
+             } else {
+                 for (Worker worker : WORKER_LIST) {
+                     if (worker.firstTask != null) {
+                         return;
                      }
                  }
+             }
+         }
+         //如果队列中这个元素一直没被取走,线程池里的线程最终肯定会全死光
+         while (blockingQueue.contains(command)) {
+             synchronized (WORKER_LIST) {
+                 if (WORKER_LIST.isEmpty()) {
+                     if (!shutdownNow) {
+                         addWorker(() -> {
+                         }, false);
+                     }
+                 }
+             }
+         }
+     }
+
+
+     private void addWorker(Runnable command, boolean additional) {
+         synchronized (WORKER_LIST) {
+             if (!shutdown) {
+                 WORKER_LIST.add(new Worker(command, additional));
              }
          }
      }
@@ -316,7 +351,7 @@ import java.util.concurrent.atomic.AtomicInteger;
      /**
       * 如果线程数量还没达到核心线程数量,进入这个方法
       */
-     private void branchForCoreThrNotMax(Runnable command){
+     private void branchForCoreThrNotMax(Runnable command) {
          //线程数量没达到核心线程数，争抢创建核心线程机会
          if (workerSum.getAndIncrement() >= CORE_NUM) {
              //没抢到创建核心线程机会，入队
@@ -325,11 +360,7 @@ import java.util.concurrent.atomic.AtomicInteger;
              } else {
                  //发现队列已满，查看是否抢到创建额外线程机会
                  if (workerSum.get() <= MAX_NUM) {
-                     synchronized (WORKER_LIST) {
-                         if (!shutdown) {
-                             WORKER_LIST.add(new Worker(command, true));
-                         }
-                     }
+                     addWorker(command, true);
                  } else {
                      workerSum.getAndDecrement();
                      rejectedExecutionHandler.rejectedExecution(command, this);
@@ -340,11 +371,7 @@ import java.util.concurrent.atomic.AtomicInteger;
              if (workerSum.intValue() == CORE_NUM) {
                  this.coreThreadMax = true;
              }
-             synchronized (WORKER_LIST) {
-                 if (!shutdown) {
-                     WORKER_LIST.add(new Worker(command, false));
-                 }
-             }
+             addWorker(command, false);
          }
      }
 
@@ -352,14 +379,18 @@ import java.util.concurrent.atomic.AtomicInteger;
      public List<Runnable> shutdownNow() {
          this.shutdown = true;
          this.shutdownNow = true;
-         synchronized (this) {
-             while (!WORKER_LIST.isEmpty()) {
-                 synchronized (WORKER_LIST) {
-                     for (Worker worker : WORKER_LIST) {
-                         worker.thread.interrupt();
-                     }
+         while (!WORKER_LIST.isEmpty()) {
+             synchronized (WORKER_LIST) {
+                 for (Worker worker : WORKER_LIST) {
+                     worker.thread.interrupt();
                  }
              }
+             try {
+                 Thread.sleep(1);
+             } catch (InterruptedException ignored) {
+             }
+         }
+         synchronized (this) {
              this.notifyAll();
          }
          return new ArrayList(blockingQueue);
@@ -380,9 +411,56 @@ import java.util.concurrent.atomic.AtomicInteger;
 
      @Override
      public void shutdown() {
-         ThreadPoolExecutor executorService = this;
-         this.execute(executorService::stop);
-         this.shutdown = true;
+         if (!shutdown) {
+             this.shutdown = true;
+             ThreadPoolExecutor executorService = this;
+             if (CORE_NUM != 0) {
+                 newThreadToTerminate(this);
+             } else if (!blockingQueue.offer(executorService::stop)) {
+                 if (blockingQueue.isEmpty()) {
+                     //大概率是队列重写了offer方法
+                     newThreadToTerminate(this);
+                 } else {
+                     while (!blockingQueue.offer(executorService::stop)) {
+                         try {
+                             Thread.sleep(1);
+                         } catch (InterruptedException ignored) {
+                         }
+                     }
+                 }
+             }
+         }
+     }
+
+     private void newThreadToTerminate(ThreadPoolExecutor thisExecutor) {
+         new Thread() {
+             @Override
+             public void run() {
+                 while (!blockingQueue.isEmpty()) {
+                     try {
+                         Thread.sleep(100);
+                     } catch (InterruptedException ignored) {
+                     }
+                 }
+                 thisExecutor.shutdownNow = true;
+                 while (!WORKER_LIST.isEmpty()) {
+                     synchronized (WORKER_LIST) {
+                         for (Worker worker : WORKER_LIST) {
+                             if (worker.firstTask == null) {
+                                 worker.thread.interrupt();
+                             }
+                         }
+                     }
+                     try {
+                         Thread.sleep(10);
+                     } catch (InterruptedException ignored) {
+                     }
+                 }
+                 synchronized (thisExecutor) {
+                     this.notifyAll();
+                 }
+             }
+         }.start();
      }
 
 
@@ -566,25 +644,26 @@ import java.util.concurrent.atomic.AtomicInteger;
       */
      protected void stop() {
          this.shutdownNow = true;
-         synchronized (this) {
-             while (WORKER_LIST.size() != 1) {
-                 synchronized (WORKER_LIST) {
-                     for (Worker worker : WORKER_LIST) {
-                         if (worker.firstTask == null && worker.thread != Thread.currentThread()) {
-                             worker.thread.interrupt();
-                         }
+         while (WORKER_LIST.size() != 1) {
+             synchronized (WORKER_LIST) {
+                 for (Worker worker : WORKER_LIST) {
+                     if (worker.firstTask == null) {
+                         worker.thread.interrupt();
                      }
                  }
-                 try {
-                     Thread.sleep(10);
-                 } catch (InterruptedException ignored) {
-                 }
              }
-             WORKER_LIST.clear();
-             Thread.currentThread().interrupt();
+             try {
+                 Thread.sleep(10);
+             } catch (InterruptedException ignored) {
+             }
+         }
+         WORKER_LIST.clear();
+         Thread.currentThread().interrupt();
+         synchronized (this) {
              this.notifyAll();
          }
      }
+
 
      protected BlockingQueue getBlockingQueue() {
          return this.blockingQueue;
