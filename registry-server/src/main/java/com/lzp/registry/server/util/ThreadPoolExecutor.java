@@ -25,29 +25,28 @@ import java.util.concurrent.atomic.AtomicInteger;
  /**
   * Description:线程池，和jdk的线程池用法一样
   * 核心线程从创建后就一直存在，直到线程池被关闭，额外线程空闲一段时间就会死亡,超时单位不用填，只能是秒
-  *
+  * <p>
   * 相比{@link java.util.concurrent.ThreadPoolExecutor}的优势
-  *
+  * <p>
   * 1、达到最大线程数时：
   * JUC自带的线程池：当核心线程数满了，队列也满了，这时候还有大量任务进来。处理这些任务时发现当前
   * 线程数还没达到最大线程数，这些任务会争夺创建额外线程的权利，当没有抢到创建额外线程的权利，直接执行拒绝策略。
   * 这个线程池：当核心线程数满了，队列也满了，这时候还有大量任务进来，同样这些任务会争夺创建额外线程的权利，
   * 但是，如果没有抢到争夺额外线程的权利，会再次把任务丢进阻塞队列一次,如果队列还是满的，才会执行拒绝策略。(虽
   * 然第二次能加进去的概率很小很小...)
-  *
+  * <p>
   * 2、性能高(执行任务的额外耗时小)
   * 简单自测了下，execute()大量小任务，性能比{@link java.util.concurrent.ThreadPoolExecutor}要高很多。
   * 由于性能比jdk自带的线程池高，进一步降低了执行拒绝策略的概率(这才是主要原因）
-  *
+  * <p>
   * 经过实际测试，使用长度500万的有界队列，使用默认的拒绝策略(抛异常),核心线程数为4，最大线程数为8，
   * 执行1亿个小任务，JDK自带的线程池，几乎百分百抛出拒绝策略的异常，这个线程池几乎百分百完成了所有
   * 任务而没有执行拒绝策略。(测试结果和机器有关，总的来说，当队列容量远小于总任务数量，核心线程数量又小于
   * 最大线程数时，执行拒绝策略的概率比JDK自带的线程池小很多)
-  *
+  * <p>
   * 3、重写了submit(),返回的Future可以增加异步回调方法
   * JDK自带的线程池，执行submit()返回的是{@link FutureTask}对象，这个对象获取结果需要阻塞等待，
   * 而这个返回的是{@link ListenableFuture},这个future能添加异步回调方法，当任务执行结束，会执行回调方法。
-  *
   *
   * @author: Lu ZePing
   * @date: 2019/6/2 15:19
@@ -182,7 +181,7 @@ import java.util.concurrent.atomic.AtomicInteger;
                      additionThreadMax = false;
                  } else {
                      Runnable firstTask;
-                     while (!shutdown) {
+                     while (!shutdownNow) {
                          try {
                              if ((firstTask = blockingQueue.poll(5, TimeUnit.SECONDS)) != null) {
                                  addWorker(firstTask, false);
@@ -272,8 +271,10 @@ import java.util.concurrent.atomic.AtomicInteger;
              rejectedExecutionHandler.rejectedExecution(command, this);
              //判断线程数是否已经达到核心线程数
          } else if (coreThreadMax) {
+             //当核心线程数已满
              branchForCoreThreadMax(command);
          } else {
+             //当核心线程数未满
              branchForCoreThrNotMax(command);
          }
      }
@@ -313,10 +314,8 @@ import java.util.concurrent.atomic.AtomicInteger;
      private void addWorkerIfIfNecessary(Runnable command) {
          synchronized (WORKER_LIST) {
              if (WORKER_LIST.isEmpty() && blockingQueue.contains(command)) {
-                 if (!shutdownNow) {
-                     addWorker(() -> {
-                     }, false);
-                 }
+                 addWorker(() -> {
+                 }, true);
                  return;
              } else {
                  for (Worker worker : WORKER_LIST) {
@@ -330,10 +329,8 @@ import java.util.concurrent.atomic.AtomicInteger;
          while (blockingQueue.contains(command)) {
              synchronized (WORKER_LIST) {
                  if (WORKER_LIST.isEmpty()) {
-                     if (!shutdownNow) {
-                         addWorker(() -> {
-                         }, false);
-                     }
+                     addWorker(() -> {
+                     }, true);
                  }
              }
          }
@@ -342,7 +339,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
      private void addWorker(Runnable command, boolean additional) {
          synchronized (WORKER_LIST) {
-             if (!shutdown) {
+             if (!shutdownNow) {
                  WORKER_LIST.add(new Worker(command, additional));
              }
          }
@@ -414,7 +411,7 @@ import java.util.concurrent.atomic.AtomicInteger;
          if (!shutdown) {
              this.shutdown = true;
              ThreadPoolExecutor executorService = this;
-             if (CORE_NUM != 0) {
+             if (CORE_NUM == 0) {
                  newThreadToTerminate(this);
              } else if (!blockingQueue.offer(executorService::stop)) {
                  if (blockingQueue.isEmpty()) {
@@ -423,7 +420,7 @@ import java.util.concurrent.atomic.AtomicInteger;
                  } else {
                      while (!blockingQueue.offer(executorService::stop)) {
                          try {
-                             Thread.sleep(5);
+                             Thread.sleep(1);
                          } catch (InterruptedException ignored) {
                          }
                      }
@@ -432,35 +429,33 @@ import java.util.concurrent.atomic.AtomicInteger;
          }
      }
 
+
      private void newThreadToTerminate(ThreadPoolExecutor thisExecutor) {
-         new Thread() {
-             @Override
-             public void run() {
-                 while (!blockingQueue.isEmpty()) {
-                     try {
-                         Thread.sleep(100);
-                     } catch (InterruptedException ignored) {
-                     }
-                 }
-                 thisExecutor.shutdownNow = true;
-                 while (!WORKER_LIST.isEmpty()) {
-                     synchronized (WORKER_LIST) {
-                         for (Worker worker : WORKER_LIST) {
-                             if (worker.firstTask == null) {
-                                 worker.thread.interrupt();
-                             }
-                         }
-                     }
-                     try {
-                         Thread.sleep(10);
-                     } catch (InterruptedException ignored) {
-                     }
-                 }
-                 synchronized (thisExecutor) {
-                     thisExecutor.notifyAll();
+         new Thread(() -> {
+             while (!blockingQueue.isEmpty()) {
+                 try {
+                     Thread.sleep(10);
+                 } catch (InterruptedException ignored) {
                  }
              }
-         }.start();
+             thisExecutor.shutdownNow = true;
+             while (!WORKER_LIST.isEmpty()) {
+                 synchronized (WORKER_LIST) {
+                     for (Worker worker : WORKER_LIST) {
+                         if (worker.firstTask == null) {
+                             worker.thread.interrupt();
+                         }
+                     }
+                 }
+                 try {
+                     Thread.sleep(10);
+                 } catch (InterruptedException ignored) {
+                 }
+             }
+             synchronized (thisExecutor) {
+                 thisExecutor.notifyAll();
+             }
+         }).start();
      }
 
 
@@ -471,40 +466,25 @@ import java.util.concurrent.atomic.AtomicInteger;
 
      @Override
      public boolean isTerminated() {
-         return shutdownNow || (shutdown && blockingQueue.isEmpty());
+         return shutdownNow && this.WORKER_LIST.isEmpty();
      }
 
      @Override
      public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
-         if (shutdown && this.WORKER_LIST.isEmpty()) {
+         if (shutdownNow && this.WORKER_LIST.isEmpty()) {
              return true;
          } else {
              synchronized (this) {
-                 if (shutdown && this.WORKER_LIST.isEmpty()) {
+                 if (shutdownNow && this.WORKER_LIST.isEmpty()) {
                      return true;
                  } else {
                      long remainingTime = unit.toMillis(timeout);
                      long deadLine = System.currentTimeMillis() + remainingTime;
-                     while (!(shutdown && this.WORKER_LIST.isEmpty()) && remainingTime > 0) {
+                     while (!(shutdownNow && this.WORKER_LIST.isEmpty()) && remainingTime > 0) {
                          this.wait(remainingTime);
                          remainingTime = deadLine - System.currentTimeMillis();
                      }
-                     if (remainingTime < 0) {
-                         //等待的时间到了
-                         return shutdown && this.WORKER_LIST.isEmpty();
-                     } else {
-                         if (WORKER_LIST.isEmpty()) {
-                             return true;
-                         } else {
-                             while (deadLine > System.currentTimeMillis()) {
-                                 Thread.sleep(5);
-                                 if (WORKER_LIST.isEmpty()) {
-                                     return true;
-                                 }
-                             }
-                             return false;
-                         }
-                     }
+                     return remainingTime <= 0;
                  }
              }
          }
@@ -653,7 +633,7 @@ import java.util.concurrent.atomic.AtomicInteger;
                  }
              }
              try {
-                 Thread.sleep(10);
+                 Thread.sleep(1);
              } catch (InterruptedException ignored) {
              }
          }
@@ -663,7 +643,6 @@ import java.util.concurrent.atomic.AtomicInteger;
              this.notifyAll();
          }
      }
-
 
 
      protected BlockingQueue getBlockingQueue() {

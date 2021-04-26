@@ -137,11 +137,11 @@ public class RaftNode {
         LOGGER.info("server:'{}' is starting", localNode);
         term = Long.parseLong(LogService.getTerm());
         String[] remoteNodeIps = clusterProperties.getProperty("peerRaftNodes").split(Cons.COMMA);
-        setReconnectionExecutor(remoteNodeIps.length,remoteNodeIps.length);
+        setReconnectionExecutor(remoteNodeIps.length);
         HALF_COUNT = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
         String[] localIpAndPort = localNode.split(Cons.COLON);
         NettyServer.start(localIpAndPort[0], Integer.parseInt(localIpAndPort[1]));
-        resetThreadPoolForPerformElectTasks();
+        setThreadPoolForPerformElectTasks();
         electionTask = new DelayTask(() -> {
             LOGGER.info("heartbeat timed out, initiate an election");
             startElection(remoteNodeIps);
@@ -153,8 +153,8 @@ public class RaftNode {
     /**
      * 设置执行重连任务的线程池
      */
-    private static void setReconnectionExecutor(int coreNum, int maxNum) {
-        reconnectionExecutor = new ThreadPoolExecutor(coreNum, maxNum, 0, new LinkedBlockingQueue<Runnable>() {
+    private static void setReconnectionExecutor(int maxNum) {
+        reconnectionExecutor = new ThreadPoolExecutor(0, maxNum, 0, new LinkedBlockingQueue<Runnable>() {
             @Override
             public boolean offer(Runnable runnable) {
                 return false;
@@ -165,7 +165,7 @@ public class RaftNode {
     /**
      * 重置执行选举任务的线程池
      */
-    private static void resetThreadPoolForPerformElectTasks(){
+    private static void setThreadPoolForPerformElectTasks(){
         timeoutToElectionExecutor = new ThreadPoolExecutor(1, 1, 0, new DelayQueue(),
                 new ThreadFactoryImpl("timeout to election"));
         timeoutToElectionExecutor.execute(() -> {
@@ -279,7 +279,7 @@ public class RaftNode {
             LogService.clearUncommittedEntry();
         }
         timeoutToElectionExecutor.shutdownNow();
-        resetThreadPoolForPerformElectTasks();
+        setThreadPoolForPerformElectTasks();
         resetTimer();
         timeoutToElectionExecutor.execute(electionTask);
     }
@@ -289,13 +289,14 @@ public class RaftNode {
      * 监听channel,当channel关闭后,根据具体情况选择是否重连
      */
     private static void addListenerOnChannel(Channel channel, long term) {
+        //当连接断开后,channel.remoteAddress()会得到null,所以这里需要提前获取
+        InetSocketAddress inetSocketAddress = (InetSocketAddress) channel.remoteAddress();
         channel.closeFuture().addListener(future -> {
             reconnectionExecutor.execute(() -> {
                 List<Channel> slaveChannels;
                 if ((slaveChannels = termAndSlaveChannels.get(Long.toString(term))) != null) {
                     //说明不是主动断开连接的(降级为从节点或者重新选举)
                     slaveChannels.remove(channel);
-                    InetSocketAddress inetSocketAddress = (InetSocketAddress) channel.remoteAddress();
                     Channel newChannel = NettyClient.getChannelAndAskForSync(inetSocketAddress.getAddress()
                             .getHostAddress(), inetSocketAddress.getPort(), term);
                     if (newChannel != null) {
