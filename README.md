@@ -5,7 +5,7 @@
 
 
 ## 演示
-![walden](https://github.com/65487123/registry/raw/main/Rec%200004.gif)
+![Registry](https://github.com/65487123/registry/raw/main/demo.gif)
 
 
 ## 特点
