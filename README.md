@@ -5,7 +5,18 @@
 
 
 ## 演示
-![Registry](https://github.com/65487123/registry/raw/main/demo.gif)
+
+<iframe 
+    width="100%" 
+    height="450" 
+    src="https://github.com/65487123/registry/raw/main/demo.mp4" 
+    scrolling="no" 
+    border="0" 
+    frameborder="no" 
+    framespacing="0" 
+    allowfullscreen="true">
+    暂时不支持视频插入。
+</iframe>
 
 
 ## 特点
