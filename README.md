@@ -5,7 +5,7 @@
 
 
 ## 演示
-![walden](https://raw.github.com/meolu/Walden/master/static/screenshots/walden.gif)
+![walden](https://github.com/65487123/registry/raw/main/Rec%200004.gif)
 
 
 ## 特点
