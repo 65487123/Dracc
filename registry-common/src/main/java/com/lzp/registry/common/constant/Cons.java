@@ -52,7 +52,7 @@ public class Cons {
 
     static {
         String path = PropertyUtil.class.getProtectionDomain().getCodeSource().getLocation().getPath();
-        if (System.getProperty("os.name").contains("dows")) {
+        if (path.startsWith("file:")) {
             path = path.substring(5);
         }
         ROOT_PATH = path.substring(0, path.lastIndexOf("registry-server"));

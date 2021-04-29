@@ -5,7 +5,7 @@
         xsi:schemaLocation="http://maven.apache.org/plugins/maven-assembly-plugin/assembly/1.1.2 http://maven.apache.org/xsd/assembly-1.1.2.xsd">
     <id>package</id>
     <formats>
-        <format>zip</format>
+        <format>tar.gz</format>
     </formats>
     <!-- 改为false不会出现两层相同的目录 -->
     <includeBaseDirectory>false</includeBaseDirectory>
@@ -18,7 +18,9 @@
                 <include>config/**</include>
                 <include>persistence/**</include>
                 <include>bin/</include>
+                <include>log/</include>
             </includes>
+            <fileMode>0777</fileMode>
         </fileSet>
         <fileSet>
             <directory>${project.build.directory}</directory>
@@ -28,13 +30,4 @@
             </includes>
         </fileSet>
     </fileSets>
-    <!--<dependencySets>
-        <dependencySet>
-            <outputDirectory>lib</outputDirectory>
-            <scope>runtime</scope>
-            <excludes>
-                <exclude>${groupId}:${artifactId}</exclude>
-            </excludes>
-        </dependencySet>
-    </dependencySets>-->
 </assembly>

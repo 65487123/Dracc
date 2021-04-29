@@ -177,7 +177,7 @@ public class LogService {
      */
     public static void clearUncommittedEntry() {
         try {
-            uncommittedEntryWriter = new BufferedWriter(new FileWriter("A.txt"));
+            uncommittedEntryWriter = new BufferedWriter(new FileWriter(Cons.ROOT_PATH + "persistence/uncommittedEntry.txt"));
             uncommittedEntries.clear();
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
