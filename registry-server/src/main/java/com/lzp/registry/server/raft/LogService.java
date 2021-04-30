@@ -16,6 +16,7 @@
 
 package com.lzp.registry.server.raft;
 
+import com.lzp.registry.common.constant.Command;
 import com.lzp.registry.common.constant.Cons;
 import com.lzp.registry.common.util.PropertyUtil;
 import com.lzp.registry.server.util.Data;
@@ -338,7 +339,7 @@ public class LogService {
     private static void parseAndExecuteCommand(String command) {
         String[] commandDetails = command.split(Cons.SPECIFICORDER_SEPARATOR);
         Set<String> set;
-        if (Cons.ADD.equals(commandDetails[0])) {
+        if (Command.ADD.equals(commandDetails[0])) {
             if ((set = RaftNode.data.get(commandDetails[1])) == null) {
                 set = new HashSet<>();
             }

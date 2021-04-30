@@ -16,6 +16,7 @@
 
 package com.lzp.registry.server.netty;
 
+import com.lzp.registry.common.constant.Command;
 import com.lzp.registry.common.constant.Cons;
 import com.lzp.registry.common.constant.Role;
 import com.lzp.registry.common.util.CommonUtil;
@@ -53,8 +54,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     private final static Logger LOGGER = LoggerFactory.getLogger(CoreHandler.class);
     private static ExecutorService repilicationThreadPool;
     public static List<Channel> slaves;
-    private final ExecutorService SINGLE_THREAD_POOL = new ThreadPoolExecutor(1,1,0
-            ,new LinkedBlockingQueue(),new ThreadFactoryImpl("replication thread when log not synced"));
+    private final ExecutorService SINGLE_THREAD_POOL = new ThreadPoolExecutor(1, 1, 0
+            , new LinkedBlockingQueue(), new ThreadFactoryImpl("replication thread when log not synced"));
     /**
      * 单线程操作(一个io线程),无需加volatile
      */
@@ -105,7 +106,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else if (Cons.RPC_COMMIT.equals(command[1])) {
             LogService.commitFirstUncommittedLog();
         } else if (Cons.RPC_SYNC_TERM.equals(command[1])) {
-            handleSyncTerm(Long.parseLong(command[2]));
+            handleSyncTermReq(Long.parseLong(command[2]));
         } else if (Cons.RPC_ASKFORVOTE.equals(command[1])) {
             voteIfAppropriate(channelHandlerContext, command);
         } else {
@@ -127,7 +128,6 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         logMustBeConsistent = true;
         this.notify();
     }
-
 
 
     /**
@@ -207,17 +207,12 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private boolean checkWillChangeTheStateMachine(String[] command) {
         Map<String, Set<String>> data = RaftNode.data;
-        switch (command[0]) {
-            case Cons.ADD: {
-                return !data.get(command[2]).contains(command[3]);
-            }
-            case Cons.REM: {
-                return data.get(command[2]).contains(command[3]);
-            }
-            default: {
-                return false;
-            }
+        if (Command.ADD.equals(command[0])) {
+            return !data.get(command[2]).contains(command[3]);
+        } else if (Command.REM.equals(command[0])) {
+            return data.get(command[2]).contains(command[3]);
         }
+        return false;
     }
 
     /**
@@ -228,7 +223,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         if (RaftNode.termAndSlaveChannels.get(String.valueOf(RaftNode.term)).size() < RaftNode.HALF_COUNT) {
             channelHandlerContext.writeAndFlush((Cons.EXCEPTION + Cons.CLUSTER_DOWN_MESSAGE).getBytes(UTF_8));
         } else {
-            if (Cons.GET.equals(command[0])) {
+            if (Command.GET.equals(command[0])) {
                 channelHandlerContext.writeAndFlush(CommonUtil.serial(RaftNode.data.get(command[2])).getBytes(UTF_8));
             } else {
                 handleWriteReq(command, channelHandlerContext);
@@ -284,7 +279,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     private void commitAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext) {
         LogService.commitFirstUncommittedLog();
         Set<String> set;
-        if (Cons.ADD.equals(command[0])) {
+        if (Command.ADD.equals(command[0])) {
             if ((set = RaftNode.data.get(command[2])) == null) {
                 set = new HashSet<>();
             }
@@ -306,7 +301,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 处理同步任期请求
      */
-    private void handleSyncTerm(long opposingTerm) {
+    private void handleSyncTermReq(long opposingTerm) {
         //失连恢复后,数据(未提交数据)可能不一致
         logMustBeConsistent = false;
         if (Role.FOLLOWER.equals(RaftNode.getRole())) {

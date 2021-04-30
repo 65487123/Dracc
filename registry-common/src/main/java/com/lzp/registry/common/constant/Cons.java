@@ -40,9 +40,6 @@ public class Cons {
     public static final String RPC_COMMIT = "commit";
     public static final String RPC_SYNC_TERM = "syncTerm";
     public static final String RPC_TOBESLAVE = "tobeslave";
-    public static final String GET = "get";
-    public static final String ADD = "add";
-    public static final String REM = "rem";
     public static final String YES = "yes";
     public static final String FALSE = "false";
     public static final String TRUE = "true";
