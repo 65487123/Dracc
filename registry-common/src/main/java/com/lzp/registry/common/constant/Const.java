@@ -24,7 +24,7 @@ import com.lzp.registry.common.util.PropertyUtil;
  * @author: Zeping Lu
  * @date: 2021/3/17 16:26
  */
-public class Cons {
+public class Const {
     public static final String COMMA = ",";
     public static final String COLON = ":";
     public static final String COPY_LOG_REQ = "cp_req";

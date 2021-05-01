@@ -1,9 +1,9 @@
 package com.lzp.registry.server.netty;
 
-import com.lzp.registry.common.constant.Cons;
-import com.lzp.registry.common.constant.Role;
+import com.lzp.registry.common.constant.Const;
 import com.lzp.registry.common.zpproto.LzpMessageEncoder;
 import com.lzp.registry.server.raft.RaftNode;
+import com.lzp.registry.server.raft.Role;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
@@ -13,8 +13,6 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.nio.charset.StandardCharsets;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -55,8 +53,8 @@ public class NettyClient implements AutoCloseable {
     public static Channel getChannelAndRequestForVote(String requstId, String ip, int port, long term, long committedIndex, long uncommittedNum) {
         try {
             Channel channel = bootstrap.connect(ip, port).sync().channel();
-            channel.writeAndFlush((requstId + Cons.COMMAND_SEPARATOR + Cons.RPC_ASKFORVOTE + Cons.COMMAND_SEPARATOR + term + Cons
-                    .COMMAND_SEPARATOR + committedIndex + Cons.COMMAND_SEPARATOR + uncommittedNum).getBytes(UTF_8));
+            channel.writeAndFlush((requstId + Const.COMMAND_SEPARATOR + Const.RPC_ASKFORVOTE + Const.COMMAND_SEPARATOR + term + Const
+                    .COMMAND_SEPARATOR + committedIndex + Const.COMMAND_SEPARATOR + uncommittedNum).getBytes(UTF_8));
             return channel;
         } catch (Exception e) {
             try {
@@ -66,9 +64,9 @@ public class NettyClient implements AutoCloseable {
             }
             if (RaftNode.term != term) {
                 return null;
-            } else if (Role.LEADER.equals(RaftNode.getRole())) {
+            } else if (Role.LEADER == RaftNode.getRole()) {
                 return getChannelAndAskForSync(ip, port, term);
-            } else if (Role.CANDIDATE.equals(RaftNode.getRole())) {
+            } else if (Role.CANDIDATE == RaftNode.getRole()) {
                 return getChannelAndRequestForVote(requstId, ip, port, term, committedIndex, uncommittedNum);
             } else {
                 return null;
@@ -88,11 +86,11 @@ public class NettyClient implements AutoCloseable {
     public static Channel getChannelAndAskForSync(String ip, int port, long term) {
         try {
             Channel channel = bootstrap.connect(ip, port).sync().channel();
-            channel.writeAndFlush(("x" + Cons.COMMAND_SEPARATOR + Cons.RPC_SYNC_TERM +
-                    Cons.COMMAND_SEPARATOR + RaftNode.term).getBytes(UTF_8));
+            channel.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + Const.RPC_SYNC_TERM +
+                    Const.COMMAND_SEPARATOR + RaftNode.term).getBytes(UTF_8));
             return channel;
         } catch (Exception e) {
-            if (Role.LEADER.equals(RaftNode.getRole()) && RaftNode.term == term) {
+            if (Role.LEADER == RaftNode.getRole() && RaftNode.term == term) {
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException ex) {

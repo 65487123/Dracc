@@ -15,8 +15,8 @@
 
 package com.lzp.registry.server.netty;
 
- import com.lzp.registry.common.constant.Role;
  import com.lzp.registry.server.raft.RaftNode;
+ import com.lzp.registry.server.raft.Role;
  import io.netty.buffer.ByteBuf;
  import io.netty.channel.ChannelHandlerContext;
  import io.netty.handler.codec.ReplayingDecoder;
@@ -40,7 +40,7 @@ package com.lzp.registry.server.netty;
          if (length == 0) {
              if (isServer) {
                  channelHandlerContext.channel().writeAndFlush(new byte[0]);
-                 if (Role.FOLLOWER.equals(RaftNode.getRole())) {
+                 if (Role.FOLLOWER == RaftNode.getRole()) {
                      RaftNode.resetTimer();
                  }
              }

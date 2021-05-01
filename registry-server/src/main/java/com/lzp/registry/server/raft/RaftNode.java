@@ -16,8 +16,7 @@
 
 package com.lzp.registry.server.raft;
 
-import com.lzp.registry.common.constant.Cons;
-import com.lzp.registry.common.constant.Role;
+import com.lzp.registry.common.constant.Const;
 import com.lzp.registry.common.util.PropertyUtil;
 import com.lzp.registry.common.util.ThreadFactoryImpl;
 import com.lzp.registry.server.netty.NettyClient;
@@ -79,7 +78,7 @@ public class RaftNode {
     /**
      * 当前节点角色
      */
-    private static volatile String role = Role.FOLLOWER;
+    private static volatile Role role = Role.FOLLOWER;
 
     /**
      * 执行超时选举任务的线程池
@@ -132,14 +131,14 @@ public class RaftNode {
     public static Map<String, Set<String>> data = new HashMap<>();
 
     static {
-        Properties clusterProperties = PropertyUtil.getProperties(Cons.CLU_PRO);
+        Properties clusterProperties = PropertyUtil.getProperties(Const.CLU_PRO);
         String localNode = clusterProperties.getProperty("localRaftNode");
         LOGGER.info("server:'{}' is starting", localNode);
         term = Long.parseLong(LogService.getTerm());
-        String[] remoteNodeIps = clusterProperties.getProperty("peerRaftNodes").split(Cons.COMMA);
+        String[] remoteNodeIps = clusterProperties.getProperty("peerRaftNodes").split(Const.COMMA);
         setReconnectionExecutor(remoteNodeIps.length);
         HALF_COUNT = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
-        String[] localIpAndPort = localNode.split(Cons.COLON);
+        String[] localIpAndPort = localNode.split(Const.COLON);
         NettyServer.start(localIpAndPort[0], Integer.parseInt(localIpAndPort[1]));
         setThreadPoolForPerformElectTasks();
         electionTask = new DelayTask(() -> {
@@ -184,7 +183,7 @@ public class RaftNode {
         ExecutorService threadPoolExecutor = new ThreadPoolExecutor(remoteNodeIps.length, remoteNodeIps
                 .length, 0, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("ask for vote"));
         for (String remoteNodeIp : remoteNodeIps) {
-            String[] ipAndPort = remoteNodeIp.split(Cons.COLON);
+            String[] ipAndPort = remoteNodeIp.split(Const.COLON);
             threadPoolExecutor.execute(() -> sendRpcAndSaveChannel(term, voteRequestId, ipAndPort[0], ipAndPort[1]));
         }
         try {
@@ -326,7 +325,7 @@ public class RaftNode {
     /**
      * 获取当前角色
      */
-    public static String getRole() {
+    public static Role getRole() {
         return role;
     }
 

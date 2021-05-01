@@ -16,7 +16,7 @@
 
 package com.lzp.registry.server.netty;
 
-import com.lzp.registry.common.constant.Cons;
+import com.lzp.registry.common.constant.Const;
 import com.lzp.registry.server.raft.LogService;
 import com.lzp.registry.server.raft.RaftNode;
 import com.lzp.registry.server.util.Data;
@@ -37,14 +37,14 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
-        String[] message = new String(bytes, UTF_8).split(Cons.COLON);
+        String[] message = new String(bytes, UTF_8).split(Const.COLON);
 
-        if (Cons.YES.equals(message[1])) {
+        if (Const.YES.equals(message[1])) {
             RaftNode.cidAndResultMap.get(message[0]).countDown();
-        } else if (Cons.RPC_TOBESLAVE.equals(message[0])) {
+        } else if (Const.RPC_TOBESLAVE.equals(message[0])) {
             //选举时,远端节点任期比本端节点新,或者当届任期已经有主,会发这个消息
             RaftNode.downgradeToSlaveNode(false, Long.parseLong(message[1]));
-        } else if (Cons.COPY_LOG_REQ.equals(message[0])) {
+        } else if (Const.COPY_LOG_REQ.equals(message[0])) {
             //放到server的从reactor中执行,以满足单线程模型
             NettyServer.workerGroup.execute(() -> sendOwnState(Long.parseLong(message[1]), channelHandlerContext));
         }
@@ -58,15 +58,15 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
     private void sendOwnState(long remoteCommittedIndex, ChannelHandlerContext channelHandlerContext) {
         if (LogService.getCommittedLogIndex() == remoteCommittedIndex) {
             //说明状态机一样,只需要同步未提交日志就行
-            channelHandlerContext.writeAndFlush(("x" + Cons.COMMAND_SEPARATOR + "1" + Cons
+            channelHandlerContext.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + "1" + Const
                     .COMMAND_SEPARATOR + LogService.getFileContentOfUncommittedEntry()).getBytes(UTF_8));
         } else {
             //需要全量同步
-            channelHandlerContext.writeAndFlush(("x" + Cons.COMMAND_SEPARATOR + "1" + Cons
-                    .COMMAND_SEPARATOR + LogService.getFileContentOfCommittedEntry() + Cons
-                    .COMMAND_SEPARATOR + LogService.getFileContentOfUncommittedEntry() + Cons
+            channelHandlerContext.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + "1" + Const
+                    .COMMAND_SEPARATOR + LogService.getFileContentOfCommittedEntry() + Const
+                    .COMMAND_SEPARATOR + LogService.getFileContentOfUncommittedEntry() + Const
                     .COMMAND_SEPARATOR + new String(DataSearialUtil.serialize(new Data(RaftNode
-                    .data)), UTF_8) + Cons.COMMAND_SEPARATOR + LogService.getCoveredIndex())
+                    .data)), UTF_8) + Const.COMMAND_SEPARATOR + LogService.getCoveredIndex())
                     .getBytes(UTF_8));
         }
     }

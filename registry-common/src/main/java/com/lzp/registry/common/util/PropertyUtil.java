@@ -17,7 +17,7 @@
 package com.lzp.registry.common.util;
 
 
-import com.lzp.registry.common.constant.Cons;
+import com.lzp.registry.common.constant.Const;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +32,7 @@ import java.util.Properties;
  */
 public class PropertyUtil {
     private static final Logger LOGGER = LoggerFactory.getLogger(PropertyUtil.class);
-    private static final String PREFIX = Cons.ROOT_PATH + "config/";
+    private static final String PREFIX = Const.ROOT_PATH + "config/";
 
 
     public static Properties getProperties(String fileName) {

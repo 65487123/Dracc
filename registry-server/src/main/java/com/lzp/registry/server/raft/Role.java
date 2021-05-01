@@ -1,4 +1,3 @@
-
 /* Copyright zeping lu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,16 +13,10 @@
  *  limitations under the License.
  */
 
-package com.lzp.registry.common.constant;
+package com.lzp.registry.server.raft;
 
-/**
- * Description:角色常量类
- *
- * @author: Zeping Lu
- * @date: 2021/4/21 15:55
- */
-public class Role {
-    public static final String FOLLOWER = "FOLLOWER";
-    public static final String CANDIDATE = "CANDIDATE";
-    public static final String LEADER = "LEADER";
+public enum Role {
+    LEADER,
+    FOLLOWER,
+    CANDIDATE
 }

@@ -16,7 +16,7 @@
 
 package com.lzp.registry.common.util;
 
-import com.lzp.registry.common.constant.Cons;
+import com.lzp.registry.common.constant.Const;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -36,7 +36,7 @@ public class CommonUtil {
     public static String serial(Set<String> set) {
         StringBuilder stringBuilder = new StringBuilder(128);
         for (String element : set) {
-            stringBuilder.append(element).append(Cons.COMMA);
+            stringBuilder.append(element).append(Const.COMMA);
         }
         return stringBuilder.deleteCharAt(stringBuilder.length() - 1).toString();
     }
@@ -45,7 +45,7 @@ public class CommonUtil {
      * 字符串序列化成list,java客户端获取查询结果用
      */
     public static List<String> deserial(String elements) {
-        return new ArrayList<>(Arrays.asList(elements.split(Cons.COMMA)));
+        return new ArrayList<>(Arrays.asList(elements.split(Const.COMMA)));
     }
 
 }
