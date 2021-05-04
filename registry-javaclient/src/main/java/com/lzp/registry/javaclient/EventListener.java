@@ -14,22 +14,7 @@
  *  limitations under the License.
  */
 
-package com.lzp.registry.common.exception;
+package com.lzp.registry.javaclient;
 
-/**
- * Description:读失败异常,
- * 目前只有一种情况会抛这个异常:
- * 当读数据时候，server端节点个数少于整个集群节点个数的一半时
- *
- *
- * @author: Zeping Lu
- * @date: 2021/3/29 18:18
- */
-public class TheClusterIsDownException extends RuntimeException {
-
-    public TheClusterIsDownException(String message) {
-        //"The number of surviving nodes is less than half of the total number of nodes in the raft cluster, and read operations are not supported"
-        super(message);
-    }
-
+public class EventListener {
 }

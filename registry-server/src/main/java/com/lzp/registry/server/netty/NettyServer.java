@@ -43,12 +43,13 @@ public class NettyServer {
      */
     public static void start(String ip, int port) {
         try {
-            new ServerBootstrap().group(bossGroup, workerGroup).channel(NioServerSocketChannel.class).childHandler(new ChannelInitializer() {
+            new ServerBootstrap().group(bossGroup, workerGroup).channel(NioServerSocketChannel.class)
+                    .childHandler(new ChannelInitializer() {
                 @Override
-                protected void initChannel(Channel channel) {
-                    channel.pipeline().addLast(new IdleStateHandler(15, Integer.MAX_VALUE, Integer.MAX_VALUE))
-                            .addLast(new LzpRaftMessageDecoder(true)).addLast(new LzpMessageEncoder())
-                            .addLast("serviceHandler", new CoreHandler());
+                protected void initChannel(Channel channel) { channel.pipeline()
+                        .addLast(new IdleStateHandler(15, Integer.MAX_VALUE, Integer.MAX_VALUE))
+                        .addLast(new LzpRaftMessageDecoder(true)).addLast(new LzpMessageEncoder())
+                        .addLast("serviceHandler", new CoreHandler());
                 }
             }).bind(ip, port).sync();
         } catch (InterruptedException e) {

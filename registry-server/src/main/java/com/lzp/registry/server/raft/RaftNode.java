@@ -19,7 +19,7 @@ package com.lzp.registry.server.raft;
 import com.lzp.registry.common.constant.Const;
 import com.lzp.registry.common.util.PropertyUtil;
 import com.lzp.registry.common.util.ThreadFactoryImpl;
-import com.lzp.registry.server.netty.NettyClient;
+import com.lzp.registry.server.netty.ConnectionFactory;
 import com.lzp.registry.server.netty.NettyServer;
 import com.lzp.registry.server.netty.CoreHandler;
 import com.lzp.registry.server.util.CountDownLatch;
@@ -203,7 +203,7 @@ public class RaftNode {
      * 发起投票并保存连接
      */
     private static void sendRpcAndSaveChannel(long currentTerm, String voteRequestId, String ip, String port) {
-        Channel channel = NettyClient.getChannelAndRequestForVote(voteRequestId, ip, Integer
+        Channel channel = ConnectionFactory.newChannelAndRequestForVote(voteRequestId, ip, Integer
                 .parseInt(port), currentTerm, LogService.getCommittedLogIndex(), LogService.getUncommittedLogSize());
         if (channel != null) {
             List<Channel> channelsToSlave;
@@ -296,7 +296,7 @@ public class RaftNode {
                 if ((slaveChannels = termAndSlaveChannels.get(Long.toString(term))) != null) {
                     //说明不是主动断开连接的(降级为从节点或者重新选举)
                     slaveChannels.remove(channel);
-                    Channel newChannel = NettyClient.getChannelAndAskForSync(inetSocketAddress.getAddress()
+                    Channel newChannel = ConnectionFactory.newChannelAndAskForSync(inetSocketAddress.getAddress()
                             .getHostAddress(), inetSocketAddress.getPort(), term);
                     if (newChannel != null) {
                         //再次判断存当前任期从节点的容器是否还在,如果不在了,说明任期已经更新或者自己已经不是主节点了

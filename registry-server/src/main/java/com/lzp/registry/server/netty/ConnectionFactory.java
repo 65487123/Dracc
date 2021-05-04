@@ -23,9 +23,9 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  * @author: Lu ZePing
  * @date: 2020/9/27 18:32
  */
-public class NettyClient implements AutoCloseable {
+public class ConnectionFactory implements AutoCloseable {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(NettyClient.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConnectionFactory.class);
     public static EventLoopGroup workerGroup = new NioEventLoopGroup(1);
     private static Bootstrap bootstrap = new Bootstrap();
 
@@ -43,6 +43,7 @@ public class NettyClient implements AutoCloseable {
 
     /**
      * Description:
+     * 建立连接,然后发送请求投票的消息,并且返回这个连接
      * 如果term没对方新，对方会返回一个消息，然后这边把term更新为最新,并且角色转换成follower
      * 如果index没对方新，对方不会投票
      * 如果对方当前任期已投过票也不会投票
@@ -50,7 +51,7 @@ public class NettyClient implements AutoCloseable {
      * @author: Lu ZePing
      * @date: 2020/9/27 18:32
      */
-    public static Channel getChannelAndRequestForVote(String requstId, String ip, int port, long term, long committedIndex, long uncommittedNum) {
+    public static Channel newChannelAndRequestForVote(String requstId, String ip, int port, long term, long committedIndex, long uncommittedNum) {
         try {
             Channel channel = bootstrap.connect(ip, port).sync().channel();
             channel.writeAndFlush((requstId + Const.COMMAND_SEPARATOR + Const.RPC_ASKFORVOTE + Const.COMMAND_SEPARATOR + term + Const
@@ -65,9 +66,9 @@ public class NettyClient implements AutoCloseable {
             if (RaftNode.term != term) {
                 return null;
             } else if (Role.LEADER == RaftNode.getRole()) {
-                return getChannelAndAskForSync(ip, port, term);
+                return newChannelAndAskForSync(ip, port, term);
             } else if (Role.CANDIDATE == RaftNode.getRole()) {
-                return getChannelAndRequestForVote(requstId, ip, port, term, committedIndex, uncommittedNum);
+                return newChannelAndRequestForVote(requstId, ip, port, term, committedIndex, uncommittedNum);
             } else {
                 return null;
             }
@@ -77,13 +78,14 @@ public class NettyClient implements AutoCloseable {
 
     /**
      * Description:
+     * 建立连接,然后发送请求同步的消息,并且返回这个连接
      * 本节点已经被选举为主节点了,但是还有少数从节点处于失连状态
      * 则需要不断重连,连接成功后发送一个同步请求(主要是同步任期)
      *
      * @author: Lu ZePing
      * @date: 2020/9/27 18:32
      */
-    public static Channel getChannelAndAskForSync(String ip, int port, long term) {
+    public static Channel newChannelAndAskForSync(String ip, int port, long term) {
         try {
             Channel channel = bootstrap.connect(ip, port).sync().channel();
             channel.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + Const.RPC_SYNC_TERM +
@@ -96,7 +98,7 @@ public class NettyClient implements AutoCloseable {
                 } catch (InterruptedException ex) {
                     LOGGER.error(e.getMessage(), e);
                 }
-                return getChannelAndAskForSync(ip, port, term);
+                return newChannelAndAskForSync(ip, port, term);
             }
             return null;
         }
