@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package com.lzp.registry.javaclient.impl;
+package com.lzp.registry.javaclient.jregistry;
 
 import com.lzp.registry.javaclient.EventListener;
 import com.lzp.registry.javaclient.api.RegistryClient;
