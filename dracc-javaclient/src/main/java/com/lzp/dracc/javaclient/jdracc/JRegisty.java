@@ -55,6 +55,21 @@ public class JRegisty implements DraccClient, AutoCloseable {
     }
 
     @Override
+    public void addConfig(String configName, String configVal) throws DraccException {
+
+    }
+
+    @Override
+    public void removeConfig(String configName, String configVal) throws DraccException {
+
+    }
+
+    @Override
+    public List<String> getConfigs(String configName) throws DraccException {
+        return null;
+    }
+
+    @Override
     public void lock(String lockName) throws DraccException {
 
     }
