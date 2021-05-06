@@ -1,9 +1,6 @@
-# Registry  分布式注册中心
+# Dracc  (Distributed registry and configuration center)
 
-
-基于Raft算法实现的分布式注册中心
-
-
+基于Raft算法实现的分布式注册中心以及配置中心
 
 
 ## 特点
@@ -22,6 +19,8 @@
 * 服务发现
 * 服务监听
 * 健康检查
+* 发布配置
+* 获取配置
 * 分布式锁
 * ......
 
