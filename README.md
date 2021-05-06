@@ -31,8 +31,8 @@
 4、找到dracc-server-1.0.tar.gz 压缩包,拷贝到需要实际部署的目录中  
 5、解压压缩包(windows直接右键选择解压到当前目录,Linux执行 tar -zvxf dracc-server-1.0.tar.gz)  
 6、进入解压出的config目录,编辑cluster.properties文件,配置这个raft集群的所有节点ip(需要配置本地节点ip、远端节点ip,配置文件中有例子)  
-7、进入解压出的bin目录,执行启动脚本(run.sh或run.bat是前台运行,start.sh是后台运行),后台运行产生的日志会输出到解压出的log目录中,
-启动半数以上raft节点后,这个集群则可自动选举出leader,并对外提供服务。
+7、进入解压出的bin目录,执行启动脚本(run.sh或run.bat是前台运行,start.sh是后台运行),后台运行产生的日志会输出到解压出的log目录中。
+成功启动半数以上raft节点,则这个raft集群为可用状态,他会自动选举出leader,并对外提供服务。
 
 
 
