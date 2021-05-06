@@ -15,5 +15,8 @@
 
 package com.lzp.dracc.javaclient.exception;
 
+/**
+ * @author luzeping
+ */
 public class DraccException extends RuntimeException{
 }

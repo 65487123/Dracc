@@ -53,7 +53,6 @@ public interface DraccClient {
 
 
 
-
     /**
      * get all instances of a service.
      *
@@ -75,6 +74,7 @@ public interface DraccClient {
     void subscribe(String serviceName, EventListener listener) throws DraccException;
 
 
+
     /**
      * Unsubscribe event listener of service.
      *
@@ -85,5 +85,23 @@ public interface DraccClient {
     void unsubscribe(String serviceName, EventListener listener) throws DraccException;
 
 
+
+    /**
+     * Obtain a distributed lock.
+     *
+     * @param lockName name of lock
+     * @throws DraccException exception
+     */
+    void lock(String lockName) throws DraccException;
+
+
+
+    /**
+     * Release the distributed lock.
+     *
+     * @param lockName name of lock
+     * @throws DraccException exception
+     */
+    void unlock(String lockName) throws DraccException;
 
 }
