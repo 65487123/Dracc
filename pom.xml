@@ -3,11 +3,11 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>com.lzp.registry</groupId>
-    <artifactId>registry-parent</artifactId>
+    <groupId>com.lzp.dracc</groupId>
+    <artifactId>dracc-parent</artifactId>
     <version>1.0</version>
 
-    <description>Distributed registry, based on raft</description>
+    <description>Distributed dracc, based on raft</description>
     <developers>
         <developer>
             <name>luzeping</name>
@@ -47,9 +47,9 @@
         </dependencies>
     </dependencyManagement>
     <modules>
-        <module>registry-server</module>
-        <module>registry-javaclient</module>
-        <module>registry-common</module>
+        <module>dracc-server</module>
+        <module>dracc-javaclient</module>
+        <module>dracc-common</module>
     </modules>
     <packaging>pom</packaging>
 
