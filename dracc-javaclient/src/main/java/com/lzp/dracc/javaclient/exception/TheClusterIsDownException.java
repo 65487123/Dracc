@@ -17,9 +17,8 @@
 package com.lzp.dracc.javaclient.exception;
 
 /**
- * Description:读失败异常,
- * 目前只有一种情况会抛这个异常:
- * 当读数据时候，server端节点个数少于整个集群节点个数的一半时
+ * Description:
+ * 当server端节点个数少于整个集群节点个数的一半时,读写会抛这个异常
  *
  *
  * @author: Zeping Lu

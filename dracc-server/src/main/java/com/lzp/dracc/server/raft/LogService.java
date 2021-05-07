@@ -109,7 +109,6 @@ public class LogService {
      * 生成快照文件并清空日志文件
      */
     public static void generateSnapshotAndClearJournal(Data data) {
-        writeCoveredIndex(Long.toString(committedIndex));
         try (BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(new FileOutputStream("./persistence/snapshot.snp"))) {
             bufferedOutputStream.write(DataSearialUtil.serialize(data));
             bufferedOutputStream.flush();
@@ -118,6 +117,7 @@ public class LogService {
         } catch (IOException e) {
             LOGGER.error("generate snapshot error", e);
         }
+        writeCoveredIndex(Long.toString(committedIndex));
     }
 
     /**
@@ -320,14 +320,17 @@ public class LogService {
              BufferedReader committedEntryReader = new BufferedReader(new FileReader(Const.ROOT_PATH + "persistence/committedEntry.txt"))) {
             byte[] bytes = new byte[bufferedOutputStream.available()];
             bufferedOutputStream.read(bytes);
-            RaftNode.data = (Map<String, Set<String>>) DataSearialUtil.deserialize(bytes).getObject();
+            RaftNode.data = (Map<String, Set<String>>[]) DataSearialUtil.deserialize(bytes).getObject();
             String command;
             while ((command = committedEntryReader.readLine()) != null) {
                 parseAndExecuteCommand(command);
             }
-        } catch (IOException e) {
-            RaftNode.data = new HashMap<>(100000);
-            LOGGER.error("generate snapshot error", e);
+        } catch (Exception e) {
+            RaftNode.data = new HashMap[2];
+            for (int i = 0; i < 2; i++) {
+                RaftNode.data[i] = new HashMap<>(100000);
+            }
+            LOGGER.error("restore state machine error", e);
         }
     }
 
@@ -337,17 +340,16 @@ public class LogService {
      */
     private static void parseAndExecuteCommand(String command) {
         String[] commandDetails = command.split(Const.SPECIFICORDER_SEPARATOR);
-        Set<String> set;
+        byte dataType = Byte.parseByte(commandDetails[1]);
         if (Command.ADD.equals(commandDetails[0])) {
-            if ((set = RaftNode.data.get(commandDetails[1])) == null) {
+            Set<String> set;
+            if ((set = RaftNode.data[dataType].get(commandDetails[2])) == null) {
                 set = new HashSet<>();
+                RaftNode.data[dataType].put(commandDetails[2], set);
             }
-            set.add(commandDetails[2]);
+            set.add(commandDetails[3]);
         } else {
-            if ((set = RaftNode.data.get(commandDetails[1])) == null) {
-                set = new HashSet<>();
-            }
-            set.remove(commandDetails[2]);
+            RaftNode.data[dataType].get(commandDetails[2]).remove(commandDetails[3]);
         }
     }
 

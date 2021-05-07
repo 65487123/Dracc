@@ -93,7 +93,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 把命令根据分隔符分割获得一个字符串数组
      * 字符串数组第二个位置就是具体的请求命令
      * 1、如果这个节点是从节点，数组第一个位置就是这个请求的请求id
-     * 2、如果这个节点是主节点，数组第一个位置是读写请求的具体请求类型(add、get等),第三位置是key
+     * 2、如果这个节点是主节点，数组第一个位置是读写请求的具体请求类型(add、get等),
+     * 第三个位置表示是服务还是配置,第四个位置是key
      */
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
@@ -205,14 +206,19 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 判断从客户端发来的写请求是否会改变状态机(写操作是否能写成功)
      * 如果不会,则不必向从节点发送请求,直接返回结果
      */
-    private boolean checkWillChangeTheStateMachine(String[] command) {
-        Map<String, Set<String>> data = RaftNode.data;
-        if (Command.ADD.equals(command[0])) {
-            return !data.get(command[2]).contains(command[3]);
-        } else if (Command.REM.equals(command[0])) {
-            return data.get(command[2]).contains(command[3]);
+    private boolean checkWillChangeTheStateMachine(String[] command, byte dataType, boolean isAdd) {
+        Map<String, Set<String>> data = RaftNode.data[dataType];
+        Set<String> set;
+        if (isAdd) {
+            return (set = data.get(command[3])) == null || !set.contains(command[4]);
+        } else {
+            //Command.REM.equals(command[0])
+            if ((set = data.get(command[3])) == null) {
+                return false;
+            } else {
+                return set.contains(command[4]);
+            }
         }
-        return false;
     }
 
     /**
@@ -223,10 +229,12 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         if (RaftNode.termAndSlaveChannels.get(String.valueOf(RaftNode.term)).size() < RaftNode.HALF_COUNT) {
             channelHandlerContext.writeAndFlush((Const.EXCEPTION + Const.CLUSTER_DOWN_MESSAGE).getBytes(UTF_8));
         } else {
+            byte dataType = Byte.parseByte(command[2]);
             if (Command.GET.equals(command[0])) {
-                channelHandlerContext.writeAndFlush(CommonUtil.serial(RaftNode.data.get(command[2])).getBytes(UTF_8));
+                channelHandlerContext.writeAndFlush(CommonUtil.serial(RaftNode.data[dataType]
+                        .get(command[3])).getBytes(UTF_8));
             } else {
-                handleWriteReq(command, channelHandlerContext);
+                handleWriteReq(command, channelHandlerContext, dataType);
             }
         }
     }
@@ -234,20 +242,22 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 处理写请求
      */
-    private void handleWriteReq(String[] command, ChannelHandlerContext channelHandlerContext) {
-        if (checkWillChangeTheStateMachine(command)) {
+    private void handleWriteReq(String[] command, ChannelHandlerContext channelHandlerContext, byte dataType) {
+        boolean isAdd = Command.ADD.equals(command[0]);
+        if (checkWillChangeTheStateMachine(command, dataType, isAdd)) {
             CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
             String commandId;
             RaftNode.cidAndResultMap.put(commandId = RaftNode.getCommandId(), countDownLatch);
+            //具体操作类型(remove、add)、服务还是配置(0、1)、key、value
             String specificOrder = command[0] + Const.SPECIFICORDER_SEPARATOR + command[2] + Const
-                    .SPECIFICORDER_SEPARATOR + command[3];
+                    .SPECIFICORDER_SEPARATOR + command[3] + Const.SPECIFICORDER_SEPARATOR + command[4];
             long unCommittedLogNum = LogService.appendUnCommittedLog(specificOrder);
             for (Channel channel : slaves) {
                 channel.writeAndFlush(commandId + Const.COMMAND_SEPARATOR + Const.RPC_REPLICATION + Const
-                        .COMMAND_SEPARATOR + specificOrder + Const.COMMAND_SEPARATOR +
-                        LogService.getCommittedLogIndex() + Const.COMMAND_SEPARATOR + unCommittedLogNum);
+                        .COMMAND_SEPARATOR + specificOrder + Const.COMMAND_SEPARATOR + LogService
+                        .getCommittedLogIndex() + Const.COMMAND_SEPARATOR + unCommittedLogNum);
             }
-            repilicationThreadPool.execute(() -> receiveResponseAndMakeDecision(countDownLatch, command, channelHandlerContext));
+            repilicationThreadPool.execute(() -> receiveResponseAndMakeDecision(countDownLatch, command, channelHandlerContext, dataType, isAdd));
         } else {
             channelHandlerContext.writeAndFlush(Const.FALSE.getBytes(UTF_8));
         }
@@ -257,7 +267,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 等待从节点的响应,并根据具体响应结果做出最终的决定
      */
-    private void receiveResponseAndMakeDecision(CountDownLatch countDownLatch, String[] command, ChannelHandlerContext channelHandlerContext) {
+    private void receiveResponseAndMakeDecision(CountDownLatch countDownLatch, String[] command,
+                                                ChannelHandlerContext channelHandlerContext, byte dataType, boolean isAdd) {
         boolean halfAgree = false;
         try {
             halfAgree = countDownLatch.await(60, TimeUnit.SECONDS);
@@ -265,7 +276,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             LOGGER.error("interrupted when waitting for response from slaves", e);
         }
         if (halfAgree) {
-            commitAndReturnResult(command, channelHandlerContext);
+            commitAndReturnResult(command, channelHandlerContext, dataType, isAdd);
         } else {
             //发送日志复制消息前有半数存活,发送日志复制消息时,却有连接断开了,防止数据不一致,重新选主
             RaftNode.downgradeToSlaveNode(false, RaftNode.term);
@@ -276,19 +287,17 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 提交日志、更新状态机并返回客户端结果
      */
-    private void commitAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext) {
+    private void commitAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext, byte dataType, boolean isAdd) {
         LogService.commitFirstUncommittedLog();
-        Set<String> set;
-        if (Command.ADD.equals(command[0])) {
-            if ((set = RaftNode.data.get(command[2])) == null) {
+        if (isAdd) {
+            Set<String> set;
+            if ((set = RaftNode.data[dataType].get(command[3])) == null) {
                 set = new HashSet<>();
+                RaftNode.data[dataType].put(command[3], set);
             }
-            set.add(command[3]);
+            set.add(command[4]);
         } else {
-            if ((set = RaftNode.data.get(command[2])) == null) {
-                set = new HashSet<>();
-            }
-            set.remove(command[3]);
+            RaftNode.data[dataType].get(command[3]).remove(command[4]);
         }
         channelHandlerContext.writeAndFlush(Const.TRUE.getBytes(UTF_8));
         for (Channel channel : slaves) {

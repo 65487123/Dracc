@@ -87,7 +87,7 @@ public interface DraccClient {
 
 
     /**
-     * add a config.
+     * Add a config.
      *
      * @param configName name of config
      * @param configVal  value of config
@@ -98,7 +98,7 @@ public interface DraccClient {
 
 
     /**
-     * remove a config.
+     * Remove a config.
      *
      * @param configName name of config
      * @param configVal  value of config
@@ -109,7 +109,7 @@ public interface DraccClient {
 
 
     /**
-     * get all instances of a service.
+     * Get all instances of a service.
      *
      * @param configName name of config
      * @return A list of string(all configs)
@@ -120,12 +120,12 @@ public interface DraccClient {
 
 
     /**
-     * Obtain a distributed lock.
+     * Acquire a distributed lock.
      *
      * @param lockName name of lock
      * @throws DraccException exception
      */
-    void lock(String lockName) throws DraccException;
+    void acquireDistributedLock(String lockName) throws DraccException;
 
 
 
@@ -135,7 +135,7 @@ public interface DraccClient {
      * @param lockName name of lock
      * @throws DraccException exception
      */
-    void unlock(String lockName) throws DraccException;
+    void releaseDistributedlock(String lockName) throws DraccException;
 
 
 

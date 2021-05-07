@@ -30,10 +30,15 @@ import java.util.Set;
  * @date: 2021/3/29 17:11
  */
 public class CommonUtil {
+
+
     /**
      * 把Set<String>类型序列化成字符串,server端返回查询结果用
      */
     public static String serial(Set<String> set) {
+        if (set == null) {
+            return "";
+        }
         StringBuilder stringBuilder = new StringBuilder(128);
         for (String element : set) {
             stringBuilder.append(element).append(Const.COMMA);

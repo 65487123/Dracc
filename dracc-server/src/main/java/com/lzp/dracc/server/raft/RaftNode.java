@@ -128,7 +128,7 @@ public class RaftNode {
     /**
      * 真正的数据(状态机)
      */
-    public static Map<String, Set<String>> data = new HashMap<>();
+    public static Map<String, Set<String>>[] data = new HashMap[2];
 
     static {
         Properties clusterProperties = PropertyUtil.getProperties(Const.CLU_PRO);
@@ -318,7 +318,7 @@ public class RaftNode {
     public static void fullSync(String committedLog, String uncommittedLog, byte[] dataObject, String coveredIndex) {
         LogService.syncCommittedLog(committedLog, coveredIndex);
         LogService.syncUncommittedLog(uncommittedLog);
-        data = (Map<String, Set<String>>) DataSearialUtil.deserialize(dataObject).getObject();
+        data = (Map<String, Set<String>>[]) DataSearialUtil.deserialize(dataObject).getObject();
     }
 
 
