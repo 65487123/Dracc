@@ -3,3 +3,6 @@
 /dracc-server/dracc-server.iml
 /dracc-javaclient/dracc-javaclient.iml
 /dracc-common/dracc-common.iml
+/dracc-server/target/
+/dracc-javaclient/target/
+/dracc-common/target/
