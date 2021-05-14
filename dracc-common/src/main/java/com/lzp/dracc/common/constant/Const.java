@@ -29,12 +29,13 @@ public class Const {
     public static final String COLON = ":";
     public static final String COPY_LOG_REQ = "cp_req";
     public static final String COPY_LOG_REPLY = "cp_reply";
-    public static final String COMMAND_SEPARATOR = "-:";
-    public static final String SPECIFICORDER_SEPARATOR = "-=";
+    public static final String COMMAND_SEPARATOR = "~";
+    public static final String SPECIFICORDER_SEPARATOR = "`";
     public static final String CLU_PRO = "cluster.properties";
     public static final String PERSI_PRO = "persistence.properties";
     public static final String SNAPSHOT_BATCH_COUNT = "snapshot-batch-count";
     public static final String RPC_ASKFORVOTE = "reqforvote";
+    public static final String RPC_GETROLE = "getrole";
     public static final String RPC_FROMCLIENT = "fromcli";
     public static final String RPC_REPLICATION = "replication";
     public static final String RPC_COMMIT = "commit";
@@ -46,6 +47,7 @@ public class Const {
     public static final String EXCEPTION = "E";
     public static final String CLUSTER_DOWN_MESSAGE = "Less than half of the nodes survive, and the cluster does not provide services";
     public static final String ROOT_PATH;
+    public static final String TIMEOUT = "timeout";
 
     static {
         String path = PropertyUtil.class.getProtectionDomain().getCodeSource().getLocation().getPath();

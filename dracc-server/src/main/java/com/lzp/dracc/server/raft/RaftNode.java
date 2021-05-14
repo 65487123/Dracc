@@ -100,10 +100,6 @@ public class RaftNode {
      */
     private static DelayTask electionTask;
 
-    /**
-     * id计数器
-     */
-    private static final AtomicInteger COMMAND_ID_COUNTER = new AtomicInteger();
 
     /**
      * 任期
@@ -177,7 +173,7 @@ public class RaftNode {
     private static void startElection(String[] remoteNodeIps) {
         role = Role.CANDIDATE;
         updateTermAndSlaveChannels();
-        String voteRequestId = getCommandId();
+        String voteRequestId = Long.toString(term);
         CountDownLatch countDownLatch = new CountDownLatch(HALF_COUNT);
         cidAndResultMap.put(voteRequestId, countDownLatch);
         ExecutorService threadPoolExecutor = new ThreadPoolExecutor(remoteNodeIps.length, remoteNodeIps
@@ -335,13 +331,6 @@ public class RaftNode {
      */
     public static void resetTimer() {
         electionTask.deadline = System.currentTimeMillis() + electionTask.delay;
-    }
-
-    /**
-     * 获取命令唯一id
-     */
-    public static String getCommandId() {
-        return Integer.toString(COMMAND_ID_COUNTER.getAndIncrement());
     }
 
 

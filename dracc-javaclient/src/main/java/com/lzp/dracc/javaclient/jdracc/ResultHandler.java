@@ -17,48 +17,103 @@
 package com.lzp.dracc.javaclient.jdracc;
 
 
+import com.lzp.dracc.common.constant.Const;
+import com.lzp.dracc.common.util.ThreadFactoryImpl;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.*;
+import java.util.concurrent.locks.LockSupport;
+
 /**
  * Description:处理rpc结果的handler
  *
  * @author: Zeping Lu
  * @date: 2021/3/24 19:48
  */
-/*public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
+public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
 
+
+    /**
+     * Description:用来存超时时刻和线程以及rpc结果
+     */
+    public static class ThreadResultAndTime {
+        /**
+         * 过期的具体时刻
+         */
+        private long deadLine;
+        /**
+         * 被阻塞的线程
+         */
+        private Thread thread;
+        /**
+         * rpc结果
+         */
+        private volatile Object result;
+
+        public ThreadResultAndTime(long deadLine, Thread thread) {
+            this.deadLine = deadLine;
+            this.thread = thread;
+        }
+
+        public Object getResult() {
+            return result;
+        }
+    }
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ResultHandler.class);
+
+    /**
+     * Description:线程池
+     */
+    private static ExecutorService rpcClientThreadPool;
+    /**
+     * Description:key是发起rpc请求后被阻塞的线程id，value是待唤醒的线程和超时时间
+     */
+    public static Map<Long, ThreadResultAndTime> reqIdThreadMap = new ConcurrentHashMap<>();
+
+
+    static {
+        rpcClientThreadPool = new ThreadPoolExecutor(3, 3, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1000),
+                new ThreadFactoryImpl("rpc client"), (r, executor) -> r.run());
+
+
+
+        //一个线程专门用来检测rpc超时
+        rpcClientThreadPool.execute(() -> {
+            long now;
+            while (true) {
+                now = System.currentTimeMillis();
+                for (Map.Entry<Long, ThreadResultAndTime> entry : reqIdThreadMap.entrySet()) {
+                    //漏网之鱼会在下次被揪出来
+                    if (entry.getValue().deadLine < now) {
+                        ThreadResultAndTime threadResultAndTime = reqIdThreadMap.remove(entry.getKey());
+                        threadResultAndTime.result = Const.EXCEPTION + Const.TIMEOUT;
+                        LockSupport.unpark(threadResultAndTime.thread);
+                    }
+                }
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    LOGGER.error(e.getMessage(),e);
+                }
+            }
+        });
+    }
 
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
-        String[] message = new String(bytes, UTF_8).split(Const.COLON);
-
-        if (Const.YES.equals(message[1])) {
-            RaftNode.cidAndResultMap.get(message[0]).countDown();
-        } else if (Const.RPC_TOBESLAVE.equals(message[0])) {
-            //选举时,远端节点任期比本端节点新,或者当届任期已经有主,会发这个消息
-            RaftNode.downgradeToSlaveNode(false, Long.parseLong(message[1]));
-        } else if (Const.COPY_LOG_REQ.equals(message[0])) {
-            //放到server的从reactor中执行,以满足单线程模型
-            NettyServer.workerGroup.execute(() -> sendOwnState(Long.parseLong(message[1]), channelHandlerContext));
+        String[] threadIdAndResult = new String(bytes, StandardCharsets.UTF_8).split(Const.COLON);
+        ThreadResultAndTime threadResultAndTime = reqIdThreadMap.remove(Long.parseLong(threadIdAndResult[0]));
+        if (threadResultAndTime != null) {
+            threadResultAndTime.result = new String(bytes, StandardCharsets.UTF_8);
+            LockSupport.unpark(threadResultAndTime.thread);
         }
     }
 
 
-    *//**
-     * Description:
-     * 把本节点状态(状态机、日志等)传到对端
-     *//*
-    private void sendOwnState(long remoteCommittedIndex, ChannelHandlerContext channelHandlerContext) {
-        if (LogService.getCommittedLogIndex() == remoteCommittedIndex) {
-            //说明状态机一样,只需要同步未提交日志就行
-            channelHandlerContext.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + "1" + Const
-                    .COMMAND_SEPARATOR + LogService.getFileContentOfUncommittedEntry()).getBytes(UTF_8));
-        } else {
-            //需要全量同步
-            channelHandlerContext.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + "1" + Const
-                    .COMMAND_SEPARATOR + LogService.getFileContentOfCommittedEntry() + Const
-                    .COMMAND_SEPARATOR + LogService.getFileContentOfUncommittedEntry() + Const
-                    .COMMAND_SEPARATOR + new String(DataSearialUtil.serialize(new Data(RaftNode
-                    .data)), UTF_8) + Const.COMMAND_SEPARATOR + LogService.getCoveredIndex())
-                    .getBytes(UTF_8));
-        }
-    }
-}*/
+}

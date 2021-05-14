@@ -1,3 +1,4 @@
+
 /* Copyright zeping lu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,11 +17,14 @@
 package com.lzp.dracc.javaclient.exception;
 
 /**
- * @author luzeping
+ * Description:
+ *
+ * @author: Zeping Lu
+ * @date: 2021/5/12 19:30
  */
-public class DraccException extends Exception {
+public class TimeoutException extends DraccException {
 
-    public DraccException(String message) {
+    public TimeoutException(String message) {
         super(message);
     }
 

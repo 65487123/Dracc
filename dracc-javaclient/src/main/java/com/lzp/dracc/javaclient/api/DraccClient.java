@@ -30,7 +30,7 @@ import java.util.List;
 public interface DraccClient {
 
     /**
-     * register a instance to service.
+     * 注册一个服务实例
      *
      * @param serviceName name of service
      * @param ip          instance ip
@@ -42,7 +42,7 @@ public interface DraccClient {
 
 
     /**
-     * deregister instance from a service.
+     * 注销一个服务实例
      *
      * @param serviceName name of service
      * @param ip          instance ip
@@ -54,7 +54,7 @@ public interface DraccClient {
 
 
     /**
-     * get all instances of a service.
+     * 获取服务的所有实例
      *
      * @param serviceName name of service
      * @return A list of string(In the form of ip:port)
@@ -65,18 +65,20 @@ public interface DraccClient {
 
 
     /**
-     * Subscribe service to receive events of instances alteration.
+     * 订阅服务以接收实例更改的事件
+     * 注意：监听器不会收到由本客户端修改而产生的事件,这样做是为了节省资源(本客户端对server端做的修改,
+     * 自己是知道的,server端没必要再向这个客户端发一次通知)
      *
-     * @param serviceName name of service
-     * @param listener    event listener
-     * @throws DraccException exception
+     * @param serviceName 服务名
+     * @param listener    事件监听器
+     * @throws DraccException 异常
      */
     void subscribe(String serviceName, EventListener listener) throws DraccException;
 
 
 
     /**
-     * Unsubscribe event listener of service.
+     * 取消对某个服务的订阅
      *
      * @param serviceName name of service
      * @param listener    event listener
@@ -87,7 +89,7 @@ public interface DraccClient {
 
 
     /**
-     * Add a config.
+     * 添加一个配置
      *
      * @param configName name of config
      * @param configVal  value of config
@@ -98,7 +100,7 @@ public interface DraccClient {
 
 
     /**
-     * Remove a config.
+     * 移除一个配置
      *
      * @param configName name of config
      * @param configVal  value of config
@@ -109,7 +111,7 @@ public interface DraccClient {
 
 
     /**
-     * Get all instances of a service.
+     * 根据配置名获取配置名的所有配置
      *
      * @param configName name of config
      * @return A list of string(all configs)
@@ -136,8 +138,6 @@ public interface DraccClient {
      * @throws DraccException exception
      */
     void releaseDistributedlock(String lockName) throws DraccException;
-
-
 
 
 }

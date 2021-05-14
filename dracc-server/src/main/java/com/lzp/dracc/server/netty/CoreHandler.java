@@ -91,10 +91,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
 
     /**
      * 把命令根据分隔符分割获得一个字符串数组
-     * 字符串数组第二个位置就是具体的请求命令
-     * 1、如果这个节点是从节点，数组第一个位置就是这个请求的请求id
-     * 2、如果这个节点是主节点，数组第一个位置是读写请求的具体请求类型(add、get等),
-     * 第三个位置表示是服务还是配置,第四个位置是key
+     * 数组第一个位置就是这个请求的请求id,第二个位置就是具体的请求类型
+     *
+     * 如果这个节点是主节点,
+     * 第三个位置表示是服务还是配置,第四个位置是读写请求的具体行为(add、get等),第五个位置是key,第六个位置是value,
      */
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
@@ -110,6 +110,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             handleSyncTermReq(Long.parseLong(command[2]));
         } else if (Const.RPC_ASKFORVOTE.equals(command[1])) {
             voteIfAppropriate(channelHandlerContext, command);
+        } else if (Const.RPC_GETROLE.equals(command[1])) {
+            channelHandlerContext.writeAndFlush(RaftNode.getRole().name().getBytes(UTF_8));
         } else {
             //Cons.COPY_LOG_REPLY.equals(command[1])
             syncLogAndStateMachine(command);
@@ -223,16 +225,18 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
 
     /**
      * 处理客户端具体请求
+     * 0：请求id  1:请求类型 2:服务或配置(0或1) 3:具体行为(add、get等) 4:key 5:value
      */
     private void handleClientReq(String[] command, ChannelHandlerContext channelHandlerContext) {
         //当少于半数节点存活,整个集群是不可用的,直接返回异常
         if (RaftNode.termAndSlaveChannels.get(String.valueOf(RaftNode.term)).size() < RaftNode.HALF_COUNT) {
-            channelHandlerContext.writeAndFlush((Const.EXCEPTION + Const.CLUSTER_DOWN_MESSAGE).getBytes(UTF_8));
+            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.EXCEPTION + Const
+                    .CLUSTER_DOWN_MESSAGE).getBytes(UTF_8));
         } else {
             byte dataType = Byte.parseByte(command[2]);
-            if (Command.GET.equals(command[0])) {
-                channelHandlerContext.writeAndFlush(CommonUtil.serial(RaftNode.data[dataType]
-                        .get(command[3])).getBytes(UTF_8));
+            if (Command.GET.equals(command[3])) {
+                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + CommonUtil
+                        .serial(RaftNode.data[dataType].get(command[4]))).getBytes(UTF_8));
             } else {
                 handleWriteReq(command, channelHandlerContext, dataType);
             }
@@ -243,23 +247,22 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 处理写请求
      */
     private void handleWriteReq(String[] command, ChannelHandlerContext channelHandlerContext, byte dataType) {
-        boolean isAdd = Command.ADD.equals(command[0]);
+        boolean isAdd = Command.ADD.equals(command[3]);
         if (checkWillChangeTheStateMachine(command, dataType, isAdd)) {
             CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
-            String commandId;
-            RaftNode.cidAndResultMap.put(commandId = RaftNode.getCommandId(), countDownLatch);
-            //具体操作类型(remove、add)、服务还是配置(0、1)、key、value
-            String specificOrder = command[0] + Const.SPECIFICORDER_SEPARATOR + command[2] + Const
-                    .SPECIFICORDER_SEPARATOR + command[3] + Const.SPECIFICORDER_SEPARATOR + command[4];
+            RaftNode.cidAndResultMap.put(command[0], countDownLatch);
+            //服务还是配置(0、1)、具体操作类型(remove、add)、key、value
+            String specificOrder = command[2] + Const.SPECIFICORDER_SEPARATOR + command[3] + Const
+                    .SPECIFICORDER_SEPARATOR + command[4] + Const.SPECIFICORDER_SEPARATOR + command[5];
             long unCommittedLogNum = LogService.appendUnCommittedLog(specificOrder);
             for (Channel channel : slaves) {
-                channel.writeAndFlush(commandId + Const.COMMAND_SEPARATOR + Const.RPC_REPLICATION + Const
+                channel.writeAndFlush(command[0] + Const.COMMAND_SEPARATOR + Const.RPC_REPLICATION + Const
                         .COMMAND_SEPARATOR + specificOrder + Const.COMMAND_SEPARATOR + LogService
                         .getCommittedLogIndex() + Const.COMMAND_SEPARATOR + unCommittedLogNum);
             }
             repilicationThreadPool.execute(() -> receiveResponseAndMakeDecision(countDownLatch, command, channelHandlerContext, dataType, isAdd));
         } else {
-            channelHandlerContext.writeAndFlush(Const.FALSE.getBytes(UTF_8));
+            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.FALSE).getBytes(UTF_8));
         }
     }
 
@@ -271,7 +274,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                                                 ChannelHandlerContext channelHandlerContext, byte dataType, boolean isAdd) {
         boolean halfAgree = false;
         try {
-            halfAgree = countDownLatch.await(60, TimeUnit.SECONDS);
+            halfAgree = countDownLatch.await(30, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             LOGGER.error("interrupted when waitting for response from slaves", e);
         }
@@ -299,7 +302,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else {
             RaftNode.data[dataType].get(command[3]).remove(command[4]);
         }
-        channelHandlerContext.writeAndFlush(Const.TRUE.getBytes(UTF_8));
+        channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         for (Channel channel : slaves) {
             channel.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + Const
                     .RPC_COMMIT + Const.COMMAND_SEPARATOR).getBytes(UTF_8));

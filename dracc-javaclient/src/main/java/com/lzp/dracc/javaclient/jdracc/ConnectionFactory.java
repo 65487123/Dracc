@@ -16,9 +16,14 @@
 
 package com.lzp.dracc.javaclient.jdracc;
 
+import com.lzp.dracc.common.zpproto.LzpMessageEncoder;
 import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelInitializer;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.timeout.IdleStateHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,7 +40,7 @@ public class ConnectionFactory implements AutoCloseable {
     public static EventLoopGroup workerGroup = new NioEventLoopGroup(1);
     private static Bootstrap bootstrap = new Bootstrap();
 
-    /*static {
+    static {
         bootstrap.group(workerGroup).channel(NioSocketChannel.class).handler(new ChannelInitializer() {
             @Override
             protected void initChannel(Channel channel) {
@@ -44,13 +49,21 @@ public class ConnectionFactory implements AutoCloseable {
                         .addLast("resultHandler", new ResultHandler());
             }
         });
-    }*/
+    }
 
-
-
-
-
-
+    public static Channel newChannel(String instance) {
+        String[] ipAndPort = instance.split(":");
+        try {
+            return bootstrap.connect(ipAndPort[0], Integer.parseInt(ipAndPort[1])).sync().channel();
+        } catch (Exception e) {
+            LOGGER.warn("set up connection to {} failed , retry", instance);
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException ignored) {
+            }
+            return newChannel(instance);
+        }
+    }
 
 
     @Override

@@ -15,8 +15,26 @@
 
 package com.lzp.dracc.server.raft;
 
+/**
+ * @author luzeping
+ */
+
 public enum Role {
-    LEADER,
-    FOLLOWER,
-    CANDIDATE
+    /**
+     * 主节点
+     */
+    LEADER("LEADER"),
+
+    /**
+     * 从节点
+     */
+    FOLLOWER("FOLLOWER"),
+
+    /**
+     * 候选者
+     */
+    CANDIDATE("CANDIDATE");
+
+    Role(String role) {
+    }
 }
