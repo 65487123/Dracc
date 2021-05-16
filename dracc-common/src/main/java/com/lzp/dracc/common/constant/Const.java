@@ -36,7 +36,7 @@ public class Const {
     public static final String SNAPSHOT_BATCH_COUNT = "snapshot-batch-count";
     public static final String RPC_ASKFORVOTE = "reqforvote";
     public static final String RPC_GETROLE = "getrole";
-    public static final String RPC_FROMCLIENT = "fromcli";
+    public static final String RPC_FROMCLIENT = "rfc";
     public static final String RPC_REPLICATION = "replication";
     public static final String RPC_COMMIT = "commit";
     public static final String RPC_SYNC_TERM = "syncTerm";

@@ -31,14 +31,8 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -111,11 +105,20 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else if (Const.RPC_ASKFORVOTE.equals(command[1])) {
             voteIfAppropriate(channelHandlerContext, command);
         } else if (Const.RPC_GETROLE.equals(command[1])) {
-            channelHandlerContext.writeAndFlush(RaftNode.getRole().name().getBytes(UTF_8));
+            handleGetRole(channelHandlerContext);
         } else {
             //Cons.COPY_LOG_REPLY.equals(command[1])
             syncLogAndStateMachine(command);
         }
+    }
+
+    private void handleGetRole(ChannelHandlerContext channelHandlerContext) {
+        synchronized (RaftNode.CHANNELS_WithCLIENT) {
+            if (RaftNode.getRole() == Role.LEADER) {
+                RaftNode.CHANNELS_WithCLIENT.add(channelHandlerContext.channel());
+            }
+        }
+        channelHandlerContext.writeAndFlush(RaftNode.getRole().name().getBytes(UTF_8));
     }
 
     /**
@@ -229,7 +232,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private void handleClientReq(String[] command, ChannelHandlerContext channelHandlerContext) {
         //当少于半数节点存活,整个集群是不可用的,直接返回异常
-        if (RaftNode.termAndSlaveChannels.get(String.valueOf(RaftNode.term)).size() < RaftNode.HALF_COUNT) {
+        if (RaftNode.TERM_AND_SLAVECHANNELS.get(String.valueOf(RaftNode.term)).size() < RaftNode.HALF_COUNT) {
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.EXCEPTION + Const
                     .CLUSTER_DOWN_MESSAGE).getBytes(UTF_8));
         } else {

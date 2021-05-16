@@ -107,9 +107,14 @@ public class RaftNode {
     public static volatile long term;
 
     /**
-     * 主节点才有值
+     * 和客户端的连接,主节点才有元素
      */
-    public static Map<String, List<Channel>> termAndSlaveChannels;
+    public static final List<Channel> CHANNELS_WithCLIENT = new ArrayList<>();
+
+    /**
+     * 任期以及和从节点的连接,主节点才有元素
+     */
+    public static final Map<String, List<Channel>> TERM_AND_SLAVECHANNELS = new ConcurrentHashMap<>();
 
     /**
      * 半数
@@ -203,7 +208,7 @@ public class RaftNode {
                 .parseInt(port), currentTerm, LogService.getCommittedLogIndex(), LogService.getUncommittedLogSize());
         if (channel != null) {
             List<Channel> channelsToSlave;
-            if ((channelsToSlave = termAndSlaveChannels.get(Long.toString(currentTerm))) != null) {
+            if ((channelsToSlave = TERM_AND_SLAVECHANNELS.get(Long.toString(currentTerm))) != null) {
                 channelsToSlave.add(channel);
                 addListenerOnChannel(channel, term);
             }
@@ -215,16 +220,12 @@ public class RaftNode {
      * 断开旧连接并从容器中移除,增加装新连接的容器,发起选举时会执行此方法
      */
     private static void updateTermAndSlaveChannels() {
-        if (termAndSlaveChannels != null) {
-            List<Channel> oldChannels = termAndSlaveChannels.remove(Long.toString(term));
-            for (Channel channel : oldChannels) {
-                channel.close();
-            }
-        } else {
-            termAndSlaveChannels = new ConcurrentHashMap<>();
+        List<Channel> oldChannels = TERM_AND_SLAVECHANNELS.remove(Long.toString(term));
+        for (Channel channel : oldChannels) {
+            channel.close();
         }
         increaseTerm();
-        termAndSlaveChannels.put(Long.toString(term), new CopyOnWriteArrayList<>());
+        TERM_AND_SLAVECHANNELS.put(Long.toString(term), new CopyOnWriteArrayList<>());
     }
 
 
@@ -234,7 +235,7 @@ public class RaftNode {
     private static void upgradToLeader(String term) {
         LOGGER.info("successful election, upgrade to the master node");
         role = Role.LEADER;
-        CoreHandler.slaves = termAndSlaveChannels.get(term);
+        CoreHandler.slaves = TERM_AND_SLAVECHANNELS.get(term);
         heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, new LinkedBlockingQueue<>(),
                 new ThreadFactoryImpl("heatbeat"));
         heartBeatExecutor.execute(() -> {
@@ -263,11 +264,12 @@ public class RaftNode {
     public static void downgradeToSlaveNode(boolean needClearUncommitLog, long newTerm) {
         LOGGER.info("downgrade to slave node");
         long preTerm = RaftNode.updateTerm(term, newTerm);
-        List<Channel> oldChannels = termAndSlaveChannels.remove(Long.toString(preTerm));
+        List<Channel> oldChannels = TERM_AND_SLAVECHANNELS.remove(Long.toString(preTerm));
         for (Channel channel : oldChannels) {
             channel.close();
         }
         role = Role.FOLLOWER;
+        clearChannelsWithClient();
         heartBeatExecutor.shutdownNow();
         CoreHandler.resetReplicationThreadPool();
         if (needClearUncommitLog) {
@@ -281,6 +283,17 @@ public class RaftNode {
 
 
     /**
+     * 关闭所有与客户端的连接,并从容器中清除
+     */
+    private static void clearChannelsWithClient() {
+        synchronized (CHANNELS_WithCLIENT) {
+            for (int i = CHANNELS_WithCLIENT.size() - 1; i >= 0; i--) {
+                CHANNELS_WithCLIENT.remove(i).close();
+            }
+        }
+    }
+
+    /**
      * 监听channel,当channel关闭后,根据具体情况选择是否重连
      */
     private static void addListenerOnChannel(Channel channel, long term) {
@@ -289,14 +302,14 @@ public class RaftNode {
         channel.closeFuture().addListener(future -> {
             reconnectionExecutor.execute(() -> {
                 List<Channel> slaveChannels;
-                if ((slaveChannels = termAndSlaveChannels.get(Long.toString(term))) != null) {
+                if ((slaveChannels = TERM_AND_SLAVECHANNELS.get(Long.toString(term))) != null) {
                     //说明不是主动断开连接的(降级为从节点或者重新选举)
                     slaveChannels.remove(channel);
                     Channel newChannel = ConnectionFactory.newChannelAndAskForSync(inetSocketAddress.getAddress()
                             .getHostAddress(), inetSocketAddress.getPort(), term);
                     if (newChannel != null) {
                         //再次判断存当前任期从节点的容器是否还在,如果不在了,说明任期已经更新或者自己已经不是主节点了
-                        if (termAndSlaveChannels.get(Long.toString(term)) != null) {
+                        if (TERM_AND_SLAVECHANNELS.get(Long.toString(term)) != null) {
                             slaveChannels.add(newChannel);
                             addListenerOnChannel(newChannel, term);
                         } else {
