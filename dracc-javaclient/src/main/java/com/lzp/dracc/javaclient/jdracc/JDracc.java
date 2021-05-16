@@ -22,15 +22,25 @@ import com.lzp.dracc.javaclient.EventListener;
 import com.lzp.dracc.javaclient.api.DraccClient;
 import com.lzp.dracc.javaclient.exception.DraccException;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFutureListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.LockSupport;
 
-
+/**
+ * Description:Dracc java客户端实现
+ *
+ * @author: Zeping Lu
+ * @date: 2021/3/24 19:48
+ */
 public class JDracc implements DraccClient, AutoCloseable {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(JDracc.class);
+
 
     private Channel channelToLeader;
     private int timeout;
@@ -54,12 +64,30 @@ public class JDracc implements DraccClient, AutoCloseable {
         for (String ipAndPort : ipAndPorts) {
             threadPool.execute(() -> findLeaderAndSetChannel(ipAndPort, countDownLatch));
         }
+        boolean leaderFound = false;
         try {
-            if (!countDownLatch.await(5, TimeUnit.SECONDS)) {
+            if (!(leaderFound = countDownLatch.await(5, TimeUnit.SECONDS))) {
                 throw new DraccException("can not find leader");
             }
         } finally {
             threadPool.shutdownNow();
+            if (leaderFound) {
+                //事件监听放到这是为了防止当server端有两个主时添加监听的连接被第二个建立的连接覆盖了
+                channelToLeader.closeFuture().addListener((ChannelFutureListener) future -> {
+                    resetChannelToLeader(ipAndPorts);
+                });
+            }
+        }
+    }
+
+
+    private void resetChannelToLeader(String... ipAndPorts) {
+        try {
+            Thread.sleep(1000);
+            LOGGER.warn("Lost connection with the leader or reset ChannelToleader failed, set ChannelToleader again");
+            setUpChannelToLeader(ipAndPorts);
+        } catch (Exception e) {
+            resetChannelToLeader(ipAndPorts);
         }
     }
 

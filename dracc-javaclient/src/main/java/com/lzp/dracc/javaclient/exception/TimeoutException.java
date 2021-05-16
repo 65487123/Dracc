@@ -17,7 +17,6 @@
 package com.lzp.dracc.javaclient.exception;
 
 /**
- * Description:
  *
  * @author: Zeping Lu
  * @date: 2021/5/12 19:30
