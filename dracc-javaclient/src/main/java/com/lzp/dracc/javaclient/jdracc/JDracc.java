@@ -102,7 +102,7 @@ public class JDracc implements DraccClient, AutoCloseable {
         while ((result = threadResultAndTime.getResult()) == null) {
             LockSupport.park(thisThread);
         }
-        if ("LEADER".equals(result)) {
+        if ("LEADER".equals(result) && countDownLatch.getCount() != 0) {
             channelToLeader = channel;
             countDownLatch.countDown();
         } else {

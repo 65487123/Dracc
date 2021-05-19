@@ -113,9 +113,9 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     }
 
     private void handleGetRole(ChannelHandlerContext channelHandlerContext) {
-        synchronized (RaftNode.CHANNELS_WithCLIENT) {
+        synchronized (RaftNode.CHANNELS_WITH_CLIENT) {
             if (RaftNode.getRole() == Role.LEADER) {
-                RaftNode.CHANNELS_WithCLIENT.add(channelHandlerContext.channel());
+                RaftNode.CHANNELS_WITH_CLIENT.add(channelHandlerContext.channel());
             }
         }
         channelHandlerContext.writeAndFlush(RaftNode.getRole().name().getBytes(UTF_8));

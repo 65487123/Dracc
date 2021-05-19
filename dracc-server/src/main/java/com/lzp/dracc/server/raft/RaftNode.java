@@ -91,7 +91,7 @@ public class RaftNode {
     private static ExecutorService heartBeatExecutor;
 
     /**
-     * 执行重连任务的线程池r
+     * 执行重连任务的线程池
      */
     private static ExecutorService reconnectionExecutor;
 
@@ -109,7 +109,7 @@ public class RaftNode {
     /**
      * 和客户端的连接,主节点才有元素
      */
-    public static final List<Channel> CHANNELS_WithCLIENT = new ArrayList<>();
+    public static final List<Channel> CHANNELS_WITH_CLIENT = new ArrayList<>();
 
     /**
      * 任期以及和从节点的连接,主节点才有元素
@@ -286,9 +286,9 @@ public class RaftNode {
      * 关闭所有与客户端的连接,并从容器中清除
      */
     private static void clearChannelsWithClient() {
-        synchronized (CHANNELS_WithCLIENT) {
-            for (int i = CHANNELS_WithCLIENT.size() - 1; i >= 0; i--) {
-                CHANNELS_WithCLIENT.remove(i).close();
+        synchronized (CHANNELS_WITH_CLIENT) {
+            for (int i = CHANNELS_WITH_CLIENT.size() - 1; i >= 0; i--) {
+                CHANNELS_WITH_CLIENT.remove(i).close();
             }
         }
     }
