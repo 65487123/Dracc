@@ -23,8 +23,8 @@ package com.lzp.dracc.javaclient.exception;
  */
 public class TimeoutException extends DraccException {
 
-    public TimeoutException(String message) {
-        super(message);
+    public TimeoutException() {
+        super("rpc time out");
     }
 
 }

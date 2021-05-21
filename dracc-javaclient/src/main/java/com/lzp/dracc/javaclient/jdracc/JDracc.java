@@ -16,11 +16,15 @@
 
 package com.lzp.dracc.javaclient.jdracc;
 
+import com.lzp.dracc.common.constant.Command;
 import com.lzp.dracc.common.constant.Const;
+import com.lzp.dracc.common.util.CommonUtil;
 import com.lzp.dracc.common.util.ThreadFactoryImpl;
 import com.lzp.dracc.javaclient.EventListener;
 import com.lzp.dracc.javaclient.api.DraccClient;
 import com.lzp.dracc.javaclient.exception.DraccException;
+import com.lzp.dracc.javaclient.exception.TheClusterIsDownException;
+import com.lzp.dracc.javaclient.exception.TimeoutException;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFutureListener;
 import org.slf4j.Logger;
@@ -43,7 +47,7 @@ public class JDracc implements DraccClient, AutoCloseable {
 
 
     private Channel channelToLeader;
-    private int timeout;
+    private final int TIMEOUT;
 
     /**
      * 创建一个Dracc集群的客户端
@@ -54,29 +58,28 @@ public class JDracc implements DraccClient, AutoCloseable {
      */
     public JDracc(int timeout, String... ipAndPorts) throws InterruptedException, DraccException {
         setUpChannelToLeader(ipAndPorts);
-        this.timeout = timeout;
+        this.TIMEOUT = timeout;
     }
 
 
     private void setUpChannelToLeader(String... ipAndPorts) throws InterruptedException, DraccException {
         CountDownLatch countDownLatch = new CountDownLatch(1);
-        ExecutorService threadPool = new ThreadPoolExecutor(ipAndPorts.length, ipAndPorts.length, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("find leader"));
+        ExecutorService threadPool = new ThreadPoolExecutor(ipAndPorts.length, ipAndPorts.length, 0,
+                TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("find leader"));
         for (String ipAndPort : ipAndPorts) {
             threadPool.execute(() -> findLeaderAndSetChannel(ipAndPort, countDownLatch));
         }
-        boolean leaderFound = false;
         try {
-            if (!(leaderFound = countDownLatch.await(5, TimeUnit.SECONDS))) {
+            if (countDownLatch.await(5, TimeUnit.SECONDS)) {
+                synchronized (JDracc.class) {
+                    channelToLeader.closeFuture().addListener((ChannelFutureListener) future ->
+                            resetChannelToLeader(ipAndPorts));
+                }
+            } else {
                 throw new DraccException("can not find leader");
             }
         } finally {
             threadPool.shutdownNow();
-            if (leaderFound) {
-                //事件监听放到这是为了防止当server端有两个主时添加监听的连接被第二个建立的连接覆盖了
-                channelToLeader.closeFuture().addListener((ChannelFutureListener) future -> {
-                    resetChannelToLeader(ipAndPorts);
-                });
-            }
         }
     }
 
@@ -98,37 +101,91 @@ public class JDracc implements DraccClient, AutoCloseable {
         ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler.ThreadResultAndTime(System.currentTimeMillis() + 5000, thisThread);
         ResultHandler.reqIdThreadMap.put(thisThread.getId(), threadResultAndTime);
         channel.writeAndFlush(Const.RPC_GETROLE.getBytes(StandardCharsets.UTF_8));
-        Object result;
+        String result;
         while ((result = threadResultAndTime.getResult()) == null) {
-            LockSupport.park(thisThread);
+            LockSupport.park();
         }
-        if ("LEADER".equals(result) && countDownLatch.getCount() != 0) {
-            channelToLeader = channel;
-            countDownLatch.countDown();
+        if ("LEADER".equals(result)) {
+            synchronized (JDracc.class) {
+                if (countDownLatch.getCount() != 0) {
+                    channelToLeader = channel;
+                    countDownLatch.countDown();
+                }
+            }
         } else {
             channel.close();
         }
     }
 
+    private String sentRpcAndGetResult(Thread currentThread,String command){
+        ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler.ThreadResultAndTime(System.currentTimeMillis() + TIMEOUT, currentThread);
+        ResultHandler.reqIdThreadMap.put(currentThread.getId(), threadResultAndTime);
+        channelToLeader.writeAndFlush(command.getBytes(StandardCharsets.UTF_8));
+        String result;
+        while ((result = threadResultAndTime.getResult()) == null) {
+            LockSupport.park();
+        }
+        return result;
+    }
+
+
+    private String generateCommand(long threadId, String dataType, String operType, String key, String value) {
+        return threadId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
+                + dataType + Const.COMMAND_SEPARATOR + operType + Const.COMMAND_SEPARATOR
+                + key + Const.COMMAND_SEPARATOR + value;
+    }
+
+    private String genCmdForGet(long threadId, String dataType, String operType, String key) {
+        return threadId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
+                + dataType + Const.COMMAND_SEPARATOR + operType + Const.COMMAND_SEPARATOR + key;
+    }
+
+    private void checkResult(String result) throws DraccException {
+        if (result.startsWith(Const.EXCEPTION)) {
+            String content = result.substring(1);
+            if (Const.TIMEOUT.equals(content)) {
+                throw new TimeoutException();
+            } else if (Const.CLUSTER_DOWN_MESSAGE.equals(content)) {
+                throw new TheClusterIsDownException();
+            } else {
+                throw new DraccException(content);
+            }
+        }
+    }
 
     @Override
     public void registerInstance(String serviceName, String ip, int port) throws DraccException {
+        Thread currentThread = Thread.currentThread();
+        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
+                .getId(), Const.ZERO, Command.ADD, serviceName, ip + Const.COLON + port)));
 
     }
 
     @Override
     public void deregisterInstance(String serviceName, String ip, int port) throws DraccException {
-
+        Thread currentThread = Thread.currentThread();
+        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
+                .getId(), Const.ZERO, Command.REM, serviceName, ip + Const.COLON + port)));
     }
 
     @Override
     public List<String> getAllInstances(String serviceName) throws DraccException {
-        return null;
+        Thread currentThread = Thread.currentThread();
+        String result = sentRpcAndGetResult(currentThread, genCmdForGet(currentThread
+                .getId(), Const.ZERO, Command.GET, serviceName));
+        try {
+            return CommonUtil.deserial(result);
+        } catch (Exception e) {
+            checkResult(result);
+            return null;
+        }
     }
 
     @Override
     public void subscribe(String serviceName, EventListener listener) throws DraccException {
-
+        Thread currentThread = Thread.currentThread();
+        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
+                .getId(), Const.ONE, Command.ADD, serviceName, channelToLeader.localAddress() + Const.COLON + channelToLeader.localAddress())));
     }
 
     @Override
@@ -138,17 +195,29 @@ public class JDracc implements DraccClient, AutoCloseable {
 
     @Override
     public void addConfig(String configName, String configVal) throws DraccException {
-
+        Thread currentThread = Thread.currentThread();
+        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
+                .getId(), Const.ONE, Command.ADD, configName, configVal)));
     }
 
     @Override
     public void removeConfig(String configName, String configVal) throws DraccException {
-
+        Thread currentThread = Thread.currentThread();
+        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
+                .getId(), Const.ONE, Command.REM, configName, configVal)));
     }
 
     @Override
     public List<String> getConfigs(String configName) throws DraccException {
-        return null;
+        Thread currentThread = Thread.currentThread();
+        String result = sentRpcAndGetResult(currentThread, genCmdForGet(currentThread
+                .getId(), Const.ONE, Command.GET, configName));
+        try {
+            return CommonUtil.deserial(result);
+        } catch (Exception e) {
+            checkResult(result);
+            return null;
+        }
     }
 
     @Override

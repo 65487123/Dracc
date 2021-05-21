@@ -26,9 +26,8 @@ package com.lzp.dracc.javaclient.exception;
  */
 public class TheClusterIsDownException extends DraccException {
 
-    public TheClusterIsDownException(String message) {
-        //"The number of surviving nodes is less than half of the total number of nodes in the raft cluster, and read operations are not supported"
-        super(message);
+    public TheClusterIsDownException() {
+        super("The number of surviving nodes is less than half of the total number of nodes in the raft cluster, and read operations are not supported");
     }
 
 }

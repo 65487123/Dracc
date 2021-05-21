@@ -53,14 +53,14 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
         /**
          * rpc结果
          */
-        private volatile Object result;
+        private volatile String result;
 
         public ThreadResultAndTime(long deadLine, Thread thread) {
             this.deadLine = deadLine;
             this.thread = thread;
         }
 
-        public Object getResult() {
+        public String getResult() {
             return result;
         }
     }

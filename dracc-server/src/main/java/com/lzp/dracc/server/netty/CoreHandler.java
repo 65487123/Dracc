@@ -28,6 +28,8 @@ import com.lzp.dracc.server.util.ThreadPoolExecutor;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -116,6 +118,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         synchronized (RaftNode.CHANNELS_WITH_CLIENT) {
             if (RaftNode.getRole() == Role.LEADER) {
                 RaftNode.CHANNELS_WITH_CLIENT.add(channelHandlerContext.channel());
+                channelHandlerContext.channel().closeFuture().addListener(future ->
+                        RaftNode.CHANNELS_WITH_CLIENT.remove(channelHandlerContext.channel()));
             }
         }
         channelHandlerContext.writeAndFlush(RaftNode.getRole().name().getBytes(UTF_8));
@@ -126,7 +130,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private synchronized void syncLogAndStateMachine(String[] command) {
         //0表示是全量同步
-        if ("0".equals(command[1])) {
+        if (Const.ZERO.equals(command[1])) {
             RaftNode.fullSync(command[2], command[3], command[4].getBytes(UTF_8), command[5]);
         } else {
             LogService.syncUncommittedLog(command[3]);

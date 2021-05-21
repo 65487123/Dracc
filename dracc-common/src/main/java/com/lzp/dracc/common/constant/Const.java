@@ -45,9 +45,11 @@ public class Const {
     public static final String FALSE = "false";
     public static final String TRUE = "true";
     public static final String EXCEPTION = "E";
-    public static final String CLUSTER_DOWN_MESSAGE = "Less than half of the nodes survive, and the cluster does not provide services";
+    public static final String CLUSTER_DOWN_MESSAGE = "cluster is down";
     public static final String ROOT_PATH;
     public static final String TIMEOUT = "timeout";
+    public static final String ZERO = "0";
+    public static final String ONE = "1";
 
     static {
         String path = PropertyUtil.class.getProtectionDomain().getCodeSource().getLocation().getPath();

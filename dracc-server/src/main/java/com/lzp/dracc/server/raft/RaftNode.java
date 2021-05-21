@@ -100,7 +100,6 @@ public class RaftNode {
      */
     private static DelayTask electionTask;
 
-
     /**
      * 任期
      */
