@@ -17,6 +17,7 @@
 package com.lzp.dracc.javaclient.jdracc;
 
 import com.lzp.dracc.common.zpproto.LzpMessageEncoder;
+import com.lzp.dracc.javaclient.netty.MessageDecoder;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;

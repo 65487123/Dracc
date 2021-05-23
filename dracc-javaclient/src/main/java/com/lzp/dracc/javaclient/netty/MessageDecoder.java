@@ -13,7 +13,7 @@
   *  limitations under the License.
   */
 
-package com.lzp.dracc.javaclient.jdracc;
+package com.lzp.dracc.javaclient.netty;
 
 
  import io.netty.buffer.ByteBuf;

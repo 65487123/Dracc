@@ -26,7 +26,6 @@ import com.lzp.dracc.javaclient.exception.DraccException;
 import com.lzp.dracc.javaclient.exception.TheClusterIsDownException;
 import com.lzp.dracc.javaclient.exception.TimeoutException;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelFutureListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +36,9 @@ import java.util.concurrent.locks.LockSupport;
 
 /**
  * Description:Dracc java客户端实现
+ *
+ * 注意:用来注册和注销服务实例的客户端实须一直保证存活(不要调用close(),并且保持对这个对象的引用),不然可能会出问题。
+ * 建议整个JVM都用一个JDracc实例
  *
  * @author: Zeping Lu
  * @date: 2021/3/24 19:48
@@ -72,8 +74,11 @@ public class JDracc implements DraccClient, AutoCloseable {
         try {
             if (countDownLatch.await(5, TimeUnit.SECONDS)) {
                 synchronized (JDracc.class) {
-                    channelToLeader.closeFuture().addListener((ChannelFutureListener) future ->
-                            resetChannelToLeader(ipAndPorts));
+                    HeatbeatWorker.executeHeartBeat(channelToLeader.closeFuture().addListener(future -> {
+                        HeatbeatWorker.stopHeartBeat(channelToLeader);
+                        resetChannelToLeader(ipAndPorts);
+                        //TODO 重新执行一边注册实例操作
+                    }).channel());
                 }
             } else {
                 throw new DraccException("can not find leader");
@@ -185,12 +190,16 @@ public class JDracc implements DraccClient, AutoCloseable {
     public void subscribe(String serviceName, EventListener listener) throws DraccException {
         Thread currentThread = Thread.currentThread();
         checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                .getId(), Const.ONE, Command.ADD, serviceName, channelToLeader.localAddress() + Const.COLON + channelToLeader.localAddress())));
+                .getId(), Const.ONE, Command.ADD, serviceName,
+                channelToLeader.localAddress() + Const.COLON + channelToLeader.localAddress())));
     }
 
     @Override
     public void unsubscribe(String serviceName, EventListener listener) throws DraccException {
-
+        Thread currentThread = Thread.currentThread();
+        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
+                .getId(), Const.ONE, Command.REM, serviceName,
+                channelToLeader.localAddress() + Const.COLON + channelToLeader.localAddress())));
     }
 
     @Override

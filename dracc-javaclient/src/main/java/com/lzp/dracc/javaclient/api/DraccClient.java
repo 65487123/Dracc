@@ -43,6 +43,7 @@ public interface DraccClient {
 
     /**
      * 注销一个服务实例
+     * 注意：由谁注册的实例就由谁来注销。不然可能会出问题
      *
      * @param serviceName name of service
      * @param ip          instance ip
@@ -66,8 +67,10 @@ public interface DraccClient {
 
     /**
      * 订阅服务以接收实例更改的事件
-     * 注意：监听器不会收到由本客户端修改而产生的事件,这样做是为了节省资源(本客户端对server端做的修改,
+     * 注意：
+     * 1、监听器不会收到由本客户端修改而产生的事件,这样做是为了节省资源(本客户端对server端做的修改,
      * 自己是知道的,server端没必要再向这个客户端发一次通知)
+     * 2、注册的监听器不会因为本客户端被关闭(close)而被清除,需要主动unsubscribe()
      *
      * @param serviceName 服务名
      * @param listener    事件监听器
@@ -90,6 +93,7 @@ public interface DraccClient {
 
     /**
      * 添加一个配置
+     * 注意:添加的配置名不要和被监听的服务名一样
      *
      * @param configName name of config
      * @param configVal  value of config
