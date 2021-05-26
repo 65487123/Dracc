@@ -16,5 +16,14 @@
 
 package com.lzp.dracc.javaclient;
 
-public class EventListener {
+import java.util.List;
+
+public interface EventListener {
+
+    /**
+     * 监听的服务的实例发生变化会调用这个方法
+     */
+    void onEvent(List<String> var1);
+
+
 }

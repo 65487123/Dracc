@@ -42,8 +42,8 @@ public class Const {
     public static final String RPC_SYNC_TERM = "syncTerm";
     public static final String RPC_TOBESLAVE = "tobeslave";
     public static final String YES = "yes";
-    public static final String FALSE = "false";
-    public static final String TRUE = "true";
+    public static final String FALSE = "f";
+    public static final String TRUE = "t";
     public static final String EXCEPTION = "E";
     public static final String CLUSTER_DOWN_MESSAGE = "cluster is down";
     public static final String ROOT_PATH;

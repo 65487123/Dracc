@@ -48,22 +48,42 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
 
     private final static Logger LOGGER = LoggerFactory.getLogger(CoreHandler.class);
+
+    /**
+     * 日志复制时执行等待从节点响应并做出最终决定任务的单线程线程池
+     */
     private static ExecutorService repilicationThreadPool;
+
+    /**
+     * 和所有从节点的连接
+     */
     public static List<Channel> slaves;
+
+    /**
+     * 给从节点用的单线程线程池。当日志复制时并且日志不同步(不连续)的时候会用到
+     */
     private final ExecutorService SINGLE_THREAD_POOL = new ThreadPoolExecutor(1, 1, 0
             , new LinkedBlockingQueue(), new ThreadFactoryImpl("replication thread when log not synced"));
+
+    /**
+     * 用来给客户端发送实例变更通知的线程池
+     */
+    private final ExecutorService THREAD_POOL_FOR_NOTI = new ThreadPoolExecutor(1, 1, 0
+            , new LinkedBlockingQueue(), new ThreadFactoryImpl("send notice"));
+
     /**
      * 单线程操作(一个io线程),无需加volatile
      */
     private boolean logMustBeConsistent = false;
 
     @Override
-    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+    public void handlerRemoved(ChannelHandlerContext ctx) {
         SINGLE_THREAD_POOL.shutdownNow();
+        THREAD_POOL_FOR_NOTI.shutdownNow();
     }
 
-    {
-        repilicationThreadPool = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<Runnable>(1000),
+    static {
+        repilicationThreadPool = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<>(1000),
                 new ThreadFactoryImpl("replication thread"), (r, executor) -> {
             try {
                 Thread.sleep(100);
@@ -109,18 +129,16 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else if (Const.RPC_GETROLE.equals(command[1])) {
             handleGetRole(channelHandlerContext);
         } else {
-            //Cons.COPY_LOG_REPLY.equals(command[1])
+            //Const.COPY_LOG_REPLY.equals(command[1])
             syncLogAndStateMachine(command);
         }
     }
 
     private void handleGetRole(ChannelHandlerContext channelHandlerContext) {
-        synchronized (RaftNode.CHANNELS_WITH_CLIENT) {
-            if (RaftNode.getRole() == Role.LEADER) {
-                RaftNode.CHANNELS_WITH_CLIENT.add(channelHandlerContext.channel());
-                channelHandlerContext.channel().closeFuture().addListener(future ->
-                        RaftNode.CHANNELS_WITH_CLIENT.remove(channelHandlerContext.channel()));
-            }
+        if (RaftNode.getRole() == Role.LEADER) {
+            RaftNode.CHANNELS_WITH_CLIENT.add(channelHandlerContext.channel());
+            channelHandlerContext.channel().closeFuture().addListener(future ->
+                    RaftNode.CHANNELS_WITH_CLIENT.remove(channelHandlerContext.channel()));
         }
         channelHandlerContext.writeAndFlush(RaftNode.getRole().name().getBytes(UTF_8));
     }
@@ -196,17 +214,25 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 RaftNode.updateTerm(RaftNode.term, opposingTerm);
                 RaftNode.resetTimer();
                 channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.YES).getBytes(UTF_8));
-            } else if (opposingTerm < RaftNode.term) {
+            } /*else if (opposingTerm < RaftNode.term) {
                 channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
-            }
+            }*/
         } else if (Role.LEADER == RaftNode.getRole()) {
             if (opposingTerm > RaftNode.term) {
                 //1、网络分区后,对方处于少数派 2、对方和本节点同时发起选举,但是对方竞选失败发起下一轮选举
                 //如果对方能成功竞选,少这一票也能竞选成功,所以这里就先不去判断日志然后投票了
                 RaftNode.downgradeToSlaveNode(false, opposingTerm);
+                //TODO
             } else {
                 //比对方先取得半数票,已经竞选成功
                 channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
+            }
+        } else {
+            if (opposingTerm < RaftNode.term) {
+                channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
+            } else if (opposingTerm > RaftNode.term) {
+                RaftNode.downgradeToSlaveNode(false, opposingTerm);
+                //TODO
             }
         }
     }
@@ -287,12 +313,27 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         }
         if (halfAgree) {
             commitAndReturnResult(command, channelHandlerContext, dataType, isAdd);
+            if (Const.ZERO.equals(command[2])) {
+                THREAD_POOL_FOR_NOTI.execute(() -> notifyListeners(command[4]));
+            }
         } else {
             //发送日志复制消息前有半数存活,发送日志复制消息时,却有连接断开了,防止数据不一致,重新选主
             RaftNode.downgradeToSlaveNode(false, RaftNode.term);
         }
     }
 
+    /**
+     * 通知所有监听器
+     */
+    private void notifyListeners(String serviceName){
+        Set<String> ips;
+        if ((ips = RaftNode.data[1].get(serviceName))!=null){
+            //这里对性能没多高要求,而且和客户端的连接也不会特别多,所以就直接遍历所有和客户端的连接而不用hash算法了
+            for (String ip : ips) {
+
+            }
+        }
+    }
 
     /**
      * 提交日志、更新状态机并返回客户端结果
@@ -328,8 +369,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             收到这个请求并且是Follower的情况
             1、挂掉后,重启server
             2、和主节点的网络不通一段时间后回复网络
-            3、网络分区后处于少数派,网络分区恢复后(这种情况,对方的任期是比自己要大的)
-            4、网络分区后处于多数派,网络分区恢复后(这种情况,对方的任期是比自己要小的)
+            3、脑裂后处于少数派,网络分区恢复后(这种情况,对方的任期是比自己要大的)
+            4、脑裂后处于多数派,网络分区恢复后(这种情况,对方的任期是比自己要小的)
             */
             if (opposingTerm > RaftNode.term) {
                 RaftNode.updateTerm(RaftNode.term, opposingTerm);
@@ -339,7 +380,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 RaftNode.resetTimer();
             }
         } else {
-            //1、脑裂恢复,本节点属于少数派 2、候选者发现已经有新主了(几乎不可能)
+            //1、本节点是网络分区后少数派的leader,脑裂恢复后 2、网络闪断恢复后候选者发现已经有新主了(几乎不可能)
             if (opposingTerm >= RaftNode.term) {
                 RaftNode.downgradeToSlaveNode(true, opposingTerm);
             }

@@ -39,7 +39,7 @@ public class HeatbeatWorker {
                     channel.writeAndFlush(emptyPackage);
                 }
                 try {
-                    Thread.sleep(6000);
+                    Thread.sleep(5000);
                 } catch (InterruptedException ignored) {
                 }
             }

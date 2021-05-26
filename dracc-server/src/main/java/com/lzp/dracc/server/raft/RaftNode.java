@@ -33,7 +33,6 @@ import org.slf4j.LoggerFactory;
 import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Description:raft节点
@@ -144,7 +143,7 @@ public class RaftNode {
         electionTask = new DelayTask(() -> {
             LOGGER.info("heartbeat timed out, initiate an election");
             startElection(remoteNodeIps);
-        }, ThreadLocalRandom.current().nextInt(12000, 18000));
+        }, ThreadLocalRandom.current().nextInt(12500, 18500));
         timeoutToElectionExecutor.execute(electionTask);
     }
 
@@ -220,8 +219,10 @@ public class RaftNode {
      */
     private static void updateTermAndSlaveChannels() {
         List<Channel> oldChannels = TERM_AND_SLAVECHANNELS.remove(Long.toString(term));
-        for (Channel channel : oldChannels) {
-            channel.close();
+        if (oldChannels!=null) {
+            for (Channel channel : oldChannels) {
+                channel.close();
+            }
         }
         increaseTerm();
         TERM_AND_SLAVECHANNELS.put(Long.toString(term), new CopyOnWriteArrayList<>());
@@ -244,7 +245,7 @@ public class RaftNode {
                     channel.writeAndFlush(emptyPackage);
                 }
                 try {
-                    Thread.sleep(4000);
+                    Thread.sleep(5000);
                 } catch (InterruptedException e) {
                     break;
                 }
@@ -258,6 +259,8 @@ public class RaftNode {
      * 或者遇到其他特殊情况,为了防止出现数据不一致,
      * 会执行此方法,降级为从节点
      *
+     * 这是个幂等操作
+     *
      * @param newTerm 新任期
      */
     public static void downgradeToSlaveNode(boolean needClearUncommitLog, long newTerm) {
@@ -269,7 +272,7 @@ public class RaftNode {
         }
         role = Role.FOLLOWER;
         clearChannelsWithClient();
-        heartBeatExecutor.shutdownNow();
+        shutdownHeatbeatExecutor();
         CoreHandler.resetReplicationThreadPool();
         if (needClearUncommitLog) {
             LogService.clearUncommittedEntry();
@@ -280,15 +283,22 @@ public class RaftNode {
         timeoutToElectionExecutor.execute(electionTask);
     }
 
+    /**
+     * 关闭执行心跳任务的线程池
+     */
+    private static void shutdownHeatbeatExecutor() {
+        if (heartBeatExecutor != null) {
+            heartBeatExecutor.shutdownNow();
+        }
+    }
 
     /**
      * 关闭所有与客户端的连接,并从容器中清除
      */
     private static void clearChannelsWithClient() {
-        synchronized (CHANNELS_WITH_CLIENT) {
-            for (int i = CHANNELS_WITH_CLIENT.size() - 1; i >= 0; i--) {
-                CHANNELS_WITH_CLIENT.remove(i).close();
-            }
+        //由于对CHANNELS_WITH_CLIENT的写操作几乎都在一个线程中执行的(netty的一个IO线程),所以无需加锁
+        for (int i = CHANNELS_WITH_CLIENT.size() - 1; i >= 0; i--) {
+            CHANNELS_WITH_CLIENT.remove(i).close();
         }
     }
 

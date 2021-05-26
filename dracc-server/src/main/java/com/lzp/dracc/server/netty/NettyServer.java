@@ -47,7 +47,7 @@ public class NettyServer {
                     .childHandler(new ChannelInitializer() {
                 @Override
                 protected void initChannel(Channel channel) { channel.pipeline()
-                        .addLast(new IdleStateHandler(15, Integer.MAX_VALUE, Integer.MAX_VALUE))
+                        .addLast(new IdleStateHandler(12, Integer.MAX_VALUE, Integer.MAX_VALUE))
                         .addLast(new LzpRaftMessageDecoder(true)).addLast(new LzpMessageEncoder())
                         .addLast("serviceHandler", new CoreHandler());
                 }

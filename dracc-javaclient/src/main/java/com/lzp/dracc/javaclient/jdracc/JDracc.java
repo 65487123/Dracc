@@ -29,8 +29,9 @@ import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.LockSupport;
 
@@ -47,9 +48,17 @@ public class JDracc implements DraccClient, AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(JDracc.class);
 
-
+    private volatile boolean isClosed = false;
     private Channel channelToLeader;
     private final int TIMEOUT;
+
+    /**
+     * 在本地保存一份通过这个客户端注册的所有实例,当与server失连并且重连后,重新再注册一遍
+     * 由于注册实例是幂等操作,server端就算还是存在这个实例,也不会有影响
+     */
+    private Map<String, Set<String>> registeredInstances = new ConcurrentHashMap<>();
+
+
 
     /**
      * 创建一个Dracc集群的客户端
@@ -74,11 +83,8 @@ public class JDracc implements DraccClient, AutoCloseable {
         try {
             if (countDownLatch.await(5, TimeUnit.SECONDS)) {
                 synchronized (JDracc.class) {
-                    HeatbeatWorker.executeHeartBeat(channelToLeader.closeFuture().addListener(future -> {
-                        HeatbeatWorker.stopHeartBeat(channelToLeader);
-                        resetChannelToLeader(ipAndPorts);
-                        //TODO 重新执行一边注册实例操作
-                    }).channel());
+                    HeatbeatWorker.executeHeartBeat(channelToLeader.closeFuture()
+                            .addListener(future -> onChannelClosed(ipAndPorts)).channel());
                 }
             } else {
                 throw new DraccException("can not find leader");
@@ -88,6 +94,20 @@ public class JDracc implements DraccClient, AutoCloseable {
         }
     }
 
+    private void onChannelClosed(String... ipAndPorts){
+        HeatbeatWorker.stopHeartBeat(channelToLeader);
+        if (!isClosed) {
+            resetChannelToLeader(ipAndPorts);
+            try {
+                for (Map.Entry<String, Set<String>> entry : registeredInstances.entrySet()) {
+                    for (String instance : entry.getValue()) {
+                        registerInstance0(entry.getKey(), instance);
+                    }
+                }
+            }catch (Exception ignored){
+            }
+        }
+    }
 
     private void resetChannelToLeader(String... ipAndPorts) {
         try {
@@ -140,10 +160,12 @@ public class JDracc implements DraccClient, AutoCloseable {
                 + key + Const.COMMAND_SEPARATOR + value;
     }
 
+
     private String genCmdForGet(long threadId, String dataType, String operType, String key) {
         return threadId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
                 + dataType + Const.COMMAND_SEPARATOR + operType + Const.COMMAND_SEPARATOR + key;
     }
+
 
     private void checkResult(String result) throws DraccException {
         if (result.startsWith(Const.EXCEPTION)) {
@@ -158,19 +180,32 @@ public class JDracc implements DraccClient, AutoCloseable {
         }
     }
 
+
+
     @Override
     public void registerInstance(String serviceName, String ip, int port) throws DraccException {
+        registerInstance0(serviceName,ip + Const.COLON + port);
+    }
+
+
+    private void registerInstance0(String serviceName, String instance) throws DraccException {
         Thread currentThread = Thread.currentThread();
         checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                .getId(), Const.ZERO, Command.ADD, serviceName, ip + Const.COLON + port)));
-
+                .getId(), Const.ZERO, Command.ADD, serviceName, instance)));
+        addInstanceLocally(serviceName, instance);
     }
+
 
     @Override
     public void deregisterInstance(String serviceName, String ip, int port) throws DraccException {
+        deregisterInstance0(serviceName, ip + Const.COLON + port);
+    }
+
+    public void deregisterInstance0(String serviceName, String instance) throws DraccException {
         Thread currentThread = Thread.currentThread();
         checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                .getId(), Const.ZERO, Command.REM, serviceName, ip + Const.COLON + port)));
+                .getId(), Const.ZERO, Command.REM, serviceName, instance)));
+        remInstanceLocally(serviceName, instance);
     }
 
     @Override
@@ -186,21 +221,46 @@ public class JDracc implements DraccClient, AutoCloseable {
         }
     }
 
+
     @Override
     public void subscribe(String serviceName, EventListener listener) throws DraccException {
+        Set<EventListener> eventListeners;
+        if ((eventListeners = ResultHandler.serviceNameListenerMap.get(serviceName)) == null) {
+            subscribe0(serviceName);
+            synchronized (this) {
+                if ((eventListeners = ResultHandler.serviceNameListenerMap.get(serviceName)) == null) {
+                    eventListeners = new CopyOnWriteArraySet<>();
+                }
+            }
+        } else if (!eventListeners.contains(listener)) {
+            subscribe0(serviceName);
+        }
+        eventListeners.add(listener);
+    }
+
+
+    private void subscribe0(String serviceName) throws DraccException {
         Thread currentThread = Thread.currentThread();
         checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                .getId(), Const.ONE, Command.ADD, serviceName,
-                channelToLeader.localAddress() + Const.COLON + channelToLeader.localAddress())));
+                        .getId(), Const.ONE, Command.ADD, serviceName,
+                ((InetSocketAddress)channelToLeader.localAddress()).getAddress().getHostAddress())));
     }
+
 
     @Override
     public void unsubscribe(String serviceName, EventListener listener) throws DraccException {
-        Thread currentThread = Thread.currentThread();
-        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                .getId(), Const.ONE, Command.REM, serviceName,
-                channelToLeader.localAddress() + Const.COLON + channelToLeader.localAddress())));
+        Set<EventListener> eventListeners;
+        if ((eventListeners = ResultHandler.serviceNameListenerMap.get(serviceName)) != null) {
+            eventListeners.remove(listener);
+            if (eventListeners.size() == 0) {
+                Thread currentThread = Thread.currentThread();
+                checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
+                                .getId(), Const.ONE, Command.REM, serviceName,
+                        ((InetSocketAddress)channelToLeader.localAddress()).getAddress().getHostAddress())));
+            }
+        }
     }
+
 
     @Override
     public void addConfig(String configName, String configVal) throws DraccException {
@@ -209,12 +269,14 @@ public class JDracc implements DraccClient, AutoCloseable {
                 .getId(), Const.ONE, Command.ADD, configName, configVal)));
     }
 
+
     @Override
     public void removeConfig(String configName, String configVal) throws DraccException {
         Thread currentThread = Thread.currentThread();
         checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
                 .getId(), Const.ONE, Command.REM, configName, configVal)));
     }
+
 
     @Override
     public List<String> getConfigs(String configName) throws DraccException {
@@ -229,10 +291,12 @@ public class JDracc implements DraccClient, AutoCloseable {
         }
     }
 
+
     @Override
     public void acquireDistributedLock(String lockName) throws DraccException {
 
     }
+
 
     @Override
     public void releaseDistributedlock(String lockName) throws DraccException {
@@ -240,8 +304,36 @@ public class JDracc implements DraccClient, AutoCloseable {
     }
 
 
+    private void addInstanceLocally(String name, String instance) {
+        Set<String> instances;
+        if ((instances = registeredInstances.get(name)) == null) {
+            synchronized (this) {
+                if ((instances = registeredInstances.get(name)) == null) {
+                    instances = new CopyOnWriteArraySet<>();
+                    instances.add(instance);
+                    registeredInstances.put(name, instances);
+                } else {
+                    instances.add(instance);
+                }
+            }
+        } else {
+            instances.add(instance);
+        }
+    }
+
+
+    private void remInstanceLocally(String name, String instance) {
+        Set<String> instances;
+        if ((instances = registeredInstances.get(name)) != null) {
+            instances.remove(instance);
+        }
+    }
+
+
     @Override
     public void close() throws Exception {
-
+        isClosed = true;
+        channelToLeader.close();
+        registeredInstances.clear();
     }
 }
