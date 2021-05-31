@@ -123,7 +123,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else if (Const.RPC_COMMIT.equals(command[1])) {
             LogService.commitFirstUncommittedLog();
         } else if (Const.RPC_SYNC_TERM.equals(command[1])) {
-            handleSyncTermReq(Long.parseLong(command[2]));
+            handleSyncTermReq(Long.parseLong(command[2]), channelHandlerContext);
         } else if (Const.RPC_ASKFORVOTE.equals(command[1])) {
             voteIfAppropriate(channelHandlerContext, command);
         } else if (Const.RPC_GETROLE.equals(command[1])) {
@@ -379,27 +379,29 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 处理同步任期请求
      */
-    private void handleSyncTermReq(long opposingTerm) {
-        //失连恢复后,数据(未提交数据)可能不一致
-        logMustBeConsistent = false;
-        if (Role.FOLLOWER == RaftNode.getRole()) {
-            /*
-            收到这个请求并且是Follower的情况
-            1、挂掉后,重启server
-            2、和主节点的网络不通一段时间后回复网络
-            3、脑裂后处于少数派,网络分区恢复后(这种情况,对方的任期是比自己要大的)
-            4、脑裂后处于多数派,网络分区恢复后(这种情况,对方的任期是比自己要小的)
-            */
-            if (opposingTerm > RaftNode.term) {
-                RaftNode.updateTerm(RaftNode.term, opposingTerm);
-                LogService.clearUncommittedEntry();
-            } else if (opposingTerm == RaftNode.term) {
-                //说明还是同一个主
-                RaftNode.resetTimer();
-            }
+    private void handleSyncTermReq(long opposingTerm, ChannelHandlerContext channelHandlerContext) {
+        if (opposingTerm < RaftNode.term) {
+            channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
         } else {
-            //1、本节点是网络分区后少数派的leader,脑裂恢复后 2、网络闪断恢复后候选者发现已经有新主了(几乎不可能)
-            if (opposingTerm >= RaftNode.term) {
+            //失连恢复后,数据(未提交数据)可能不一致
+            logMustBeConsistent = false;
+            if (Role.FOLLOWER == RaftNode.getRole()) {
+                /*
+                收到这个请求并且本节点是Follower的情况
+                1、挂掉后,重启server
+                2、和主节点的网络不通一段时间后回复网络
+                3、脑裂后处于少数派,网络分区恢复后(这种情况,对方的任期是比自己要大的)
+                4、脑裂后处于多数派,网络分区恢复后(这种情况,对方的任期是比自己要小的)
+                */
+                if (opposingTerm > RaftNode.term) {
+                    RaftNode.updateTerm(RaftNode.term, opposingTerm);
+                    LogService.clearUncommittedEntry();
+                } else {
+                    //说明还是同一个主
+                    RaftNode.resetTimer();
+                }
+            } else {
+                //1、本节点是网络分区后少数派的leader,脑裂恢复后 2、网络闪断恢复后候选者发现已经有新主了(几乎不可能)
                 RaftNode.downgradeToSlaveNode(true, opposingTerm);
             }
         }
