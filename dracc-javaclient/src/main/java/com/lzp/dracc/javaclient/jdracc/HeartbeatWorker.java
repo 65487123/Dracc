@@ -24,7 +24,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-public class HeatbeatWorker {
+public class HeartbeatWorker {
     
     private static final ThreadPoolExecutor SINGLE_THREAD_POOL = new ThreadPoolExecutor(1,
             1, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>(),

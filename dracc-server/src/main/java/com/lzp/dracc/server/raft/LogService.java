@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -137,6 +138,16 @@ public class LogService {
         }
     }
 
+    /**
+     * 提交所有未提交的日志
+     * <p>
+     * 当成功竞选为主后,发现还有未提交的日志,会执行这个方法
+     */
+    public static void commitAllUncommittedLog() {
+        while (!uncommittedEntries.isEmpty()) {
+            commitFirstUncommittedLog();
+        }
+    }
 
     /**
      * 获取已提交日志的index
@@ -326,7 +337,8 @@ public class LogService {
                 parseAndExecuteCommand(command);
             }
         } catch (Exception e) {
-            RaftNode.data = new HashMap[2];
+            RaftNode.data[0] = new ConcurrentHashMap<>();
+            RaftNode.data[1] = new HashMap<>();
             for (int i = 0; i < 2; i++) {
                 RaftNode.data[i] = new HashMap<>(100000);
             }

@@ -144,4 +144,9 @@ public interface DraccClient {
     void releaseDistributedlock(String lockName) throws DraccException;
 
 
+    /**
+     * @return  true If the client has been closed , otherwise false
+     */
+    boolean isClosed();
+
 }

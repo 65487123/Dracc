@@ -65,11 +65,6 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     private final ExecutorService SINGLE_THREAD_POOL = new ThreadPoolExecutor(1, 1, 0
             , new LinkedBlockingQueue(), new ThreadFactoryImpl("replication thread when log not synced"));
 
-    /**
-     * 用来给客户端发送实例变更通知的线程池
-     */
-    private final ExecutorService THREAD_POOL_FOR_NOTI = new ThreadPoolExecutor(1, 1, 0
-            , new LinkedBlockingQueue(), new ThreadFactoryImpl("send notice"));
 
     /**
      * 单线程操作(一个io线程),无需加volatile
@@ -79,7 +74,6 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     @Override
     public void handlerRemoved(ChannelHandlerContext ctx) {
         SINGLE_THREAD_POOL.shutdownNow();
-        THREAD_POOL_FOR_NOTI.shutdownNow();
     }
 
     static {
@@ -332,24 +326,11 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         if (halfAgree) {
             commitAndReturnResult(command, channelHandlerContext, dataType, isAdd);
             if (Const.ZERO.equals(command[2])) {
-                THREAD_POOL_FOR_NOTI.execute(() -> notifyListeners(command[4]));
+                RaftNode.notifyListeners(command[4]);
             }
         } else {
             //发送日志复制消息前有半数存活,发送日志复制消息时,却有连接断开了,防止数据不一致,重新选主
             RaftNode.downgradeToSlaveNode(false, RaftNode.term);
-        }
-    }
-
-    /**
-     * 通知所有监听器
-     */
-    private void notifyListeners(String serviceName){
-        Set<String> ips;
-        if ((ips = RaftNode.data[1].get(serviceName))!=null){
-            //这里对性能没多高要求,而且和客户端的连接也不会特别多,所以就直接遍历所有和客户端的连接而不用hash算法了
-            for (String ip : ips) {
-
-            }
         }
     }
 

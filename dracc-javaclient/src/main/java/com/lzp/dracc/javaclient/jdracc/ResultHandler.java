@@ -72,11 +72,6 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
     private static final Logger LOGGER = LoggerFactory.getLogger(ResultHandler.class);
 
     /**
-     * Description:线程池
-     */
-    private static ExecutorService rpcClientThreadPool;
-
-    /**
      * Description:key是发起rpc请求后被阻塞的线程id，value是待唤醒的线程和超时时间
      */
     public static Map<Long, ThreadResultAndTime> reqIdThreadMap = new ConcurrentHashMap<>();
@@ -88,13 +83,9 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
 
 
     static {
-        rpcClientThreadPool = new ThreadPoolExecutor(3, 3, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1000),
-                new ThreadFactoryImpl("rpc client"), (r, executor) -> r.run());
-
-
-
-        //一个线程专门用来检测rpc超时
-        rpcClientThreadPool.execute(() -> {
+        //一个线程专门用来检测rpc超时。用到这个类,说明是用到dracc了,而dracc需要客户端保持长连接,所以线程和jvm存活时长一样是合理的
+        new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new LinkedBlockingDeque<>(),
+                new ThreadFactoryImpl("check timeout")).execute(() -> {
             long now;
             while (true) {
                 now = System.currentTimeMillis();
@@ -109,7 +100,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
                 try {
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
-                    LOGGER.error(e.getMessage(),e);
+                    LOGGER.error(e.getMessage(), e);
                 }
             }
         });

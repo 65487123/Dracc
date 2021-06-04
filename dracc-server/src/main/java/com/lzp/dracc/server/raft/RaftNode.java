@@ -17,6 +17,7 @@
 package com.lzp.dracc.server.raft;
 
 import com.lzp.dracc.common.constant.Const;
+import com.lzp.dracc.common.util.CommonUtil;
 import com.lzp.dracc.common.util.PropertyUtil;
 import com.lzp.dracc.common.util.ThreadFactoryImpl;
 import com.lzp.dracc.server.netty.ConnectionFactory;
@@ -33,6 +34,8 @@ import org.slf4j.LoggerFactory;
 import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.*;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * Description:raft节点
@@ -95,6 +98,12 @@ public class RaftNode {
     private static ExecutorService reconnectionExecutor;
 
     /**
+     * 用来给客户端发送实例变更通知的线程池
+     */
+    private static final ExecutorService THREAD_POOL_FOR_NOTI = new ThreadPoolExecutor(1, 1, 0
+            , new LinkedBlockingQueue(), new ThreadFactoryImpl("send notice"));
+
+    /**
      * 超时选举任务
      */
     private static DelayTask electionTask;
@@ -107,7 +116,7 @@ public class RaftNode {
     /**
      * 和客户端的连接,主节点才有元素
      */
-    public static final List<Channel> CHANNELS_WITH_CLIENT = new ArrayList<>();
+    public static final List<Channel> CHANNELS_WITH_CLIENT = new CopyOnWriteArrayList<>();
 
     /**
      * 任期以及和从节点的连接,主节点才有元素
@@ -127,7 +136,15 @@ public class RaftNode {
     /**
      * 真正的数据(状态机)
      */
-    public static Map<String, Set<String>>[] data = new HashMap[2];
+    public static Map<String, Set<String>>[] data = new Map[2];
+
+    /**
+     *
+     * 所有将要被发送的通知
+     * key是客户端ip,value是向这个ip发送通知任务(一个服务名对应一个任务)的队列
+     */
+    private static final Map<String, BlockingQueue<String>> ALL_NOTIFICATION_TOBESENT = new ConcurrentHashMap<>();
+
 
     static {
         Properties clusterProperties = PropertyUtil.getProperties(Const.CLU_PRO);
@@ -145,6 +162,7 @@ public class RaftNode {
             startElection(remoteNodeIps);
         }, ThreadLocalRandom.current().nextInt(12500, 18500));
         timeoutToElectionExecutor.execute(electionTask);
+        startThreadForNoti();
     }
 
 
@@ -163,7 +181,7 @@ public class RaftNode {
     /**
      * 重置执行选举任务的线程池
      */
-    private static void setThreadPoolForPerformElectTasks(){
+    private static void setThreadPoolForPerformElectTasks() {
         timeoutToElectionExecutor = new ThreadPoolExecutor(1, 1, 0, new DelayQueue(),
                 new ThreadFactoryImpl("timeout to election"));
         timeoutToElectionExecutor.execute(() -> {
@@ -193,7 +211,7 @@ public class RaftNode {
                 startElection(remoteNodeIps);
             }
         } catch (InterruptedException e) {
-            LOGGER.info("Interrupted while waiting for vote", e);
+            LOGGER.info("Interrupted while waiting for vote");
         }
     }
 
@@ -219,7 +237,7 @@ public class RaftNode {
      */
     private static void updateTermAndSlaveChannels() {
         List<Channel> oldChannels = TERM_AND_SLAVECHANNELS.remove(Long.toString(term));
-        if (oldChannels!=null) {
+        if (oldChannels != null) {
             for (Channel channel : oldChannels) {
                 channel.close();
             }
@@ -237,20 +255,75 @@ public class RaftNode {
         role = Role.LEADER;
         CoreHandler.slaves = TERM_AND_SLAVECHANNELS.get(term);
         heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, new LinkedBlockingQueue<>(),
-                new ThreadFactoryImpl("heatbeat"));
-        heartBeatExecutor.execute(() -> {
-            while (true) {
-                byte[] emptyPackage = new byte[0];
-                for (Channel channel : CoreHandler.slaves) {
-                    channel.writeAndFlush(emptyPackage);
-                }
-                try {
-                    Thread.sleep(5000);
-                } catch (InterruptedException e) {
-                    break;
+                new ThreadFactoryImpl("heartbeat"));
+        heartBeatExecutor.execute(RaftNode::heartbeatAndHealthExam);
+        LogService.commitAllUncommittedLog();
+        //防止原主挂了导致通知任务丢失,选举出新主后重新向所有已注册监听的客户端发送一遍监听的服务内容通知
+        sentNotifications();
+    }
+
+
+    /**
+     * 向所有已注册监听的客户端发送一遍监听的服务内容通知
+     */
+    private static void sentNotifications() {
+        for (String service : data[0].keySet()) {
+            notifyListeners(service);
+        }
+    }
+
+    /**
+     * 心跳以及服务健康检查
+     */
+    private static void heartbeatAndHealthExam() {
+        while (true) {
+            heartbeatToSlaves();
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                break;
+            }
+            performHealthCheck();
+        }
+    }
+
+    /**
+     * 向从节点发心跳
+     */
+    private static void heartbeatToSlaves() {
+        byte[] emptyPackage = new byte[0];
+        for (Channel channel : CoreHandler.slaves) {
+            channel.writeAndFlush(emptyPackage);
+        }
+    }
+
+
+    /**
+     * 执行服务健康检查
+     */
+    private static void performHealthCheck(){
+        for (Map.Entry<String,Set<String>> serviceAndInstances: data[0].entrySet()) {
+            for (String instance:serviceAndInstances.getValue()){
+                if (!isAlive(instance)){
+                    //TODO
                 }
             }
-        });
+        }
+    }
+
+
+    /**
+     * 查看实例对应的客户端是否存活
+     */
+    private static boolean isAlive(String instance) {
+        //由于这里对性能没什么要求,所以就不用hash算法了
+        for (Channel channel : CHANNELS_WITH_CLIENT) {
+            if (instance.equals(((InetSocketAddress) channel.remoteAddress())
+                    .getAddress().getHostAddress())) {
+                return true;
+            }
+        }
+        return false;
     }
 
 
@@ -258,7 +331,7 @@ public class RaftNode {
      * 当主节点收到更高任期的消息时(网络分区恢复后)或者候选者发现已经有leader了,
      * 或者遇到其他特殊情况,为了防止出现数据不一致,
      * 会执行此方法,降级为从节点
-     *
+     * <p>
      * 这是个幂等操作
      *
      * @param newTerm 新任期
@@ -272,7 +345,7 @@ public class RaftNode {
         }
         role = Role.FOLLOWER;
         clearChannelsWithClient();
-        shutdownHeatbeatExecutor();
+        shutdownHeartbeatExecutor();
         CoreHandler.resetReplicationThreadPool();
         if (needClearUncommitLog) {
             LogService.clearUncommittedEntry();
@@ -283,10 +356,11 @@ public class RaftNode {
         timeoutToElectionExecutor.execute(electionTask);
     }
 
+
     /**
      * 关闭执行心跳任务的线程池
      */
-    private static void shutdownHeatbeatExecutor() {
+    private static void shutdownHeartbeatExecutor() {
         if (heartBeatExecutor != null) {
             heartBeatExecutor.shutdownNow();
         }
@@ -296,7 +370,6 @@ public class RaftNode {
      * 关闭所有与客户端的连接,并从容器中清除
      */
     private static void clearChannelsWithClient() {
-        //由于对CHANNELS_WITH_CLIENT的写操作几乎都在一个线程中执行的(netty的一个IO线程),所以无需加锁
         for (int i = CHANNELS_WITH_CLIENT.size() - 1; i >= 0; i--) {
             CHANNELS_WITH_CLIENT.remove(i).close();
         }
@@ -377,6 +450,64 @@ public class RaftNode {
             RaftNode.term = newTerm;
         }
         return preTerm;
+    }
+
+    /**
+     * 启动执行发通知任务以及健康检查的线程
+     */
+    private static void startThreadForNoti() {
+        THREAD_POOL_FOR_NOTI.execute(() -> {
+            for (; ; ) {
+                if (role == Role.LEADER) {
+                    BlockingQueue<String> queue;
+                    String service;
+                    for (Channel channel : CHANNELS_WITH_CLIENT) {
+                        if ((queue = ALL_NOTIFICATION_TOBESENT.get(((InetSocketAddress) channel.remoteAddress())
+                                .getAddress().getHostAddress())) != null) {
+                            while ((service = queue.poll()) != null) {
+                                sentNotification(channel, service);
+                            }
+                        }
+                    }
+                }
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException ignored) {
+                }
+            }
+        });
+    }
+
+    /**
+     * 向客户端发送通知
+     */
+    private static void sentNotification(Channel channel, String service) {
+        channel.writeAndFlush((service + Const.COMMAND_SEPARATOR + CommonUtil
+                .serial(RaftNode.data[0].get(service))).getBytes(UTF_8));
+    }
+
+
+    /**
+     * 通知所有监听器
+     */
+    public static void notifyListeners(String serviceName) {
+        Set<String> ips;
+        if ((ips = RaftNode.data[1].get(serviceName)) != null) {
+            for (String ip : ips) {
+                BlockingQueue<String> queue;
+                if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) != null) {
+                    queue.offer(serviceName);
+                } else {
+                    synchronized (ALL_NOTIFICATION_TOBESENT) {
+                        if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) == null) {
+                            queue = new LinkedBlockingQueue<>();
+                            ALL_NOTIFICATION_TOBESENT.put(ip, queue);
+                        }
+                        queue.offer(serviceName);
+                    }
+                }
+            }
+        }
     }
 
 

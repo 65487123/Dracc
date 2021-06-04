@@ -83,7 +83,7 @@ public class JDracc implements DraccClient, AutoCloseable {
         try {
             if (countDownLatch.await(5, TimeUnit.SECONDS)) {
                 synchronized (JDracc.class) {
-                    HeatbeatWorker.executeHeartBeat(channelToLeader.closeFuture()
+                    HeartbeatWorker.executeHeartBeat(channelToLeader.closeFuture()
                             .addListener(future -> onChannelClosed(ipAndPorts)).channel());
                 }
             } else {
@@ -94,28 +94,38 @@ public class JDracc implements DraccClient, AutoCloseable {
         }
     }
 
-    private void onChannelClosed(String... ipAndPorts){
-        HeatbeatWorker.stopHeartBeat(channelToLeader);
-        if (!isClosed) {
-            resetChannelToLeader(ipAndPorts);
+
+    private void onChannelClosed(String... ipAndPorts) {
+        HeartbeatWorker.stopHeartBeat(channelToLeader);
+        if (resetChannelIfNecessary(ipAndPorts)) {
             try {
                 for (Map.Entry<String, Set<String>> entry : registeredInstances.entrySet()) {
                     for (String instance : entry.getValue()) {
                         registerInstance0(entry.getKey(), instance);
                     }
                 }
-            }catch (Exception ignored){
+            } catch (Exception ignored) {
             }
         }
     }
 
-    private void resetChannelToLeader(String... ipAndPorts) {
+    /**
+     * 如果客户端没关闭,重新和server建立连接
+     *
+     * @return 是否成功和server建立连接
+     */
+    private synchronized boolean resetChannelIfNecessary(String... ipAndPorts) {
         try {
-            Thread.sleep(1000);
-            LOGGER.warn("Lost connection with the leader or reset ChannelToleader failed, set ChannelToleader again");
-            setUpChannelToLeader(ipAndPorts);
+            if (!isClosed) {
+                Thread.sleep(1000);
+                LOGGER.warn("Lost connection with the leader or reset ChannelToleader failed, set ChannelToleader again");
+                setUpChannelToLeader(ipAndPorts);
+                return true;
+            } else {
+                return false;
+            }
         } catch (Exception e) {
-            resetChannelToLeader(ipAndPorts);
+            return resetChannelIfNecessary(ipAndPorts);
         }
     }
 
@@ -141,6 +151,7 @@ public class JDracc implements DraccClient, AutoCloseable {
             channel.close();
         }
     }
+
 
     private String sentRpcAndGetResult(Thread currentThread,String command){
         ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler.ThreadResultAndTime(System.currentTimeMillis() + TIMEOUT, currentThread);
@@ -331,9 +342,15 @@ public class JDracc implements DraccClient, AutoCloseable {
 
 
     @Override
-    public void close() throws Exception {
+    public synchronized void close() throws Exception {
         isClosed = true;
         channelToLeader.close();
         registeredInstances.clear();
     }
+
+    @Override
+    public boolean isClosed() {
+        return isClosed;
+    }
+
 }
