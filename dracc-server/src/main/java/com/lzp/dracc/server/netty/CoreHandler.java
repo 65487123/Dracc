@@ -253,7 +253,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 判断从客户端发来的写请求是否会改变状态机(写操作是否能写成功)
      * 如果不会,则不必向从节点发送请求,直接返回结果
      */
-    private boolean checkWillChangeTheStateMachine(String[] command, byte dataType, boolean isAdd) {
+    private static boolean checkWillChangeTheStateMachine(String[] command, int dataType, boolean isAdd) {
         Map<String, Set<String>> data = RaftNode.data[dataType];
         Set<String> set;
         if (isAdd) {
@@ -278,7 +278,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.EXCEPTION + Const
                     .CLUSTER_DOWN_MESSAGE).getBytes(UTF_8));
         } else {
-            byte dataType = Byte.parseByte(command[2]);
+            //String.equals()比Integer.parseInt()效率高
+            int dataType = Const.ZERO.equals(command[2]) ? 0 : 1;
             if (Command.GET.equals(command[3])) {
                 channelHandlerContext.writeAndFlush((command[0] + Const.COLON + CommonUtil
                         .serial(RaftNode.data[dataType].get(command[4]))).getBytes(UTF_8));
@@ -291,7 +292,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 处理写请求
      */
-    private void handleWriteReq(String[] command, ChannelHandlerContext channelHandlerContext, byte dataType) {
+    public static void handleWriteReq(String[] command, ChannelHandlerContext channelHandlerContext, int dataType) {
         boolean isAdd = Command.ADD.equals(command[3]);
         if (checkWillChangeTheStateMachine(command, dataType, isAdd)) {
             CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
@@ -315,8 +316,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 等待从节点的响应,并根据具体响应结果做出最终的决定
      */
-    private void receiveResponseAndMakeDecision(CountDownLatch countDownLatch, String[] command,
-                                                ChannelHandlerContext channelHandlerContext, byte dataType, boolean isAdd) {
+    private static void receiveResponseAndMakeDecision(CountDownLatch countDownLatch, String[] command,
+                                                ChannelHandlerContext channelHandlerContext, int dataType, boolean isAdd) {
         boolean halfAgree = false;
         try {
             halfAgree = countDownLatch.await(30, TimeUnit.SECONDS);
@@ -337,7 +338,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 提交日志、更新状态机并返回客户端结果
      */
-    private void commitAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext, byte dataType, boolean isAdd) {
+    private static void commitAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext, int dataType, boolean isAdd) {
         LogService.commitFirstUncommittedLog();
         if (isAdd) {
             Set<String> set;
@@ -349,7 +350,11 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else {
             RaftNode.data[dataType].get(command[3]).remove(command[4]);
         }
-        channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
+        //channelHandlerContext有可能为null(健康检查时删除服务会传null)。用try-catch为了不影响正常情况性能
+        try {
+            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
+        }catch (NullPointerException ignored){
+        }
         for (Channel channel : slaves) {
             channel.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + Const
                     .RPC_COMMIT + Const.COMMAND_SEPARATOR).getBytes(UTF_8));

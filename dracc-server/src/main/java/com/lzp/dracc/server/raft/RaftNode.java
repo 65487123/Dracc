@@ -16,6 +16,7 @@
 
 package com.lzp.dracc.server.raft;
 
+import com.lzp.dracc.common.constant.Command;
 import com.lzp.dracc.common.constant.Const;
 import com.lzp.dracc.common.util.CommonUtil;
 import com.lzp.dracc.common.util.PropertyUtil;
@@ -106,7 +107,7 @@ public class RaftNode {
     /**
      * 超时选举任务
      */
-    private static DelayTask electionTask;
+    private static final DelayTask ELECTION_TASK;
 
     /**
      * 任期
@@ -139,12 +140,16 @@ public class RaftNode {
     public static Map<String, Set<String>>[] data = new Map[2];
 
     /**
-     *
      * 所有将要被发送的通知
      * key是客户端ip,value是向这个ip发送通知任务(一个服务名对应一个任务)的队列
      */
     private static final Map<String, BlockingQueue<String>> ALL_NOTIFICATION_TOBESENT = new ConcurrentHashMap<>();
 
+    /**
+     * 删除服务实例命令的一部分,健康检查时检查到失活的服务时会用到
+     */
+    private static final String[] COMMAND_FOR_DEL_SERVICE = new String[]{Const.ONE, Const.RPC_FROMCLIENT, Const.ZERO
+            , Command.REM, "", ""};
 
     static {
         Properties clusterProperties = PropertyUtil.getProperties(Const.CLU_PRO);
@@ -157,11 +162,11 @@ public class RaftNode {
         String[] localIpAndPort = localNode.split(Const.COLON);
         NettyServer.start(localIpAndPort[0], Integer.parseInt(localIpAndPort[1]));
         setThreadPoolForPerformElectTasks();
-        electionTask = new DelayTask(() -> {
+        ELECTION_TASK = new DelayTask(() -> {
             LOGGER.info("heartbeat timed out, initiate an election");
             startElection(remoteNodeIps);
         }, ThreadLocalRandom.current().nextInt(12500, 18500));
-        timeoutToElectionExecutor.execute(electionTask);
+        timeoutToElectionExecutor.execute(ELECTION_TASK);
         startThreadForNoti();
     }
 
@@ -301,16 +306,41 @@ public class RaftNode {
     /**
      * 执行服务健康检查
      */
-    private static void performHealthCheck(){
-        for (Map.Entry<String,Set<String>> serviceAndInstances: data[0].entrySet()) {
-            for (String instance:serviceAndInstances.getValue()){
-                if (!isAlive(instance)){
-                    //TODO
+    private static void performHealthCheck() {
+        for (Map.Entry<String, Set<String>> serviceAndInstances : data[0].entrySet()) {
+            for (String instance : serviceAndInstances.getValue()) {
+                if (!isAlive(instance)) {
+                    /*
+                    当检查出存活的客户端中没有这个服务实例时会进到这里,执行下面这段代码:把删除服务实例的任务
+                    丢进netty的io线程中执行(接收客户端业务请求的线程,单线程设计的)。
+                    这段代码(判断完到把任务加入到线程池)是不能被中断的,纯cpu计算执行速度非常快。
+                    如果刚进入到这里,客户端就已经重连上并且server端已经把客户端的连接加入到容器中
+                    然后返回给客户端连接成功消息,客户端收到消息后马上重新把服务注册了一遍。这也不会
+                    出现乱序。因为这个过程至少得经历一个RTT(Round-Trip Time)
+                    所以,没必要加锁
+                    */
+                    /*
+                    当执行NioEventLoopGroup().execute(),netty底层最终会调用到NioEventLoop的
+                    execute(),把任务塞进他的任务队列中。NioEventLoop在select()前会判断一次队列中
+                    是否有任务,如果有任务会执行任务。如果NioEventLoop已经在阻塞select()了,会唤醒他
+                    并执行任务(如果execute()的runnable实现了NonWakeupRunnable,则不会唤醒)
+                    */
+                    NettyServer.workerGroup.execute(() -> CoreHandler.handleWriteReq(
+                            generCommandForDelService(serviceAndInstances.getKey(), instance),
+                            null, 0));
                 }
             }
         }
     }
 
+    /**
+     * 生成删除服务实例的命令
+     */
+    private static String[] generCommandForDelService(String serviceName, String instance) {
+        COMMAND_FOR_DEL_SERVICE[4] = serviceName;
+        COMMAND_FOR_DEL_SERVICE[5] = instance;
+        return COMMAND_FOR_DEL_SERVICE;
+    }
 
     /**
      * 查看实例对应的客户端是否存活
@@ -353,7 +383,7 @@ public class RaftNode {
         timeoutToElectionExecutor.shutdownNow();
         setThreadPoolForPerformElectTasks();
         resetTimer();
-        timeoutToElectionExecutor.execute(electionTask);
+        timeoutToElectionExecutor.execute(ELECTION_TASK);
     }
 
 
@@ -425,7 +455,7 @@ public class RaftNode {
      * 重置计时器
      */
     public static void resetTimer() {
-        electionTask.deadline = System.currentTimeMillis() + electionTask.delay;
+        ELECTION_TASK.deadline = System.currentTimeMillis() + ELECTION_TASK.delay;
     }
 
 
