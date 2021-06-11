@@ -137,7 +137,7 @@ public class RaftNode {
     /**
      * 真正的数据(状态机)
      */
-    public static Map<String, Set<String>>[] data = new Map[2];
+    public static Map<String,Object>[] data = new Map[3];
 
     /**
      * 所有将要被发送的通知
@@ -307,8 +307,8 @@ public class RaftNode {
      * 执行服务健康检查
      */
     private static void performHealthCheck() {
-        for (Map.Entry<String, Set<String>> serviceAndInstances : data[0].entrySet()) {
-            for (String instance : serviceAndInstances.getValue()) {
+        for (Map.Entry<String, Object> serviceAndInstances : data[0].entrySet()) {
+            for (String instance : (Set<String>) serviceAndInstances.getValue()) {
                 if (!isAlive(instance)) {
                     /*
                     当检查出存活的客户端中没有这个服务实例时会进到这里,执行下面这段代码:把删除服务实例的任务
@@ -322,8 +322,9 @@ public class RaftNode {
                     /*
                     当执行NioEventLoopGroup().execute(),netty底层最终会调用到NioEventLoop的
                     execute(),把任务塞进他的任务队列中。NioEventLoop在select()前会判断一次队列中
-                    是否有任务,如果有任务会执行任务。如果NioEventLoop已经在阻塞select()了,会唤醒他
-                    并执行任务(如果execute()的runnable实现了NonWakeupRunnable,则不会唤醒)
+                    是否有任务,如果有任务会selectNow()然后先处理已就绪的io请求再执行这个任务。如果
+                    NioEventLoop已经在阻塞select()了,会唤醒他并执行任务(如果execute()的runnable
+                    实现了NonWakeupRunnable,则不会唤醒)
                     */
                     NettyServer.workerGroup.execute(() -> CoreHandler.handleWriteReq(
                             generCommandForDelService(serviceAndInstances.getKey(), instance),
@@ -439,7 +440,7 @@ public class RaftNode {
     public static void fullSync(String committedLog, String uncommittedLog, byte[] dataObject, String coveredIndex) {
         LogService.syncCommittedLog(committedLog, coveredIndex);
         LogService.syncUncommittedLog(uncommittedLog);
-        data = (Map<String, Set<String>>[]) DataSearialUtil.deserialize(dataObject).getObject();
+        data = (Map<String, Object>[]) DataSearialUtil.deserialize(dataObject).getObject();
     }
 
 
@@ -513,7 +514,7 @@ public class RaftNode {
      */
     private static void sentNotification(Channel channel, String service) {
         channel.writeAndFlush((service + Const.COMMAND_SEPARATOR + CommonUtil
-                .serial(RaftNode.data[0].get(service))).getBytes(UTF_8));
+                .serial((Set<String>) RaftNode.data[0].get(service))).getBytes(UTF_8));
     }
 
 
@@ -521,8 +522,8 @@ public class RaftNode {
      * 通知所有监听器
      */
     public static void notifyListeners(String serviceName) {
-        Set<String> ips;
-        if ((ips = RaftNode.data[1].get(serviceName)) != null) {
+        List<String> ips;
+        if ((ips = (List<String>) RaftNode.data[2].get(serviceName)) != null) {
             for (String ip : ips) {
                 BlockingQueue<String> queue;
                 if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) != null) {

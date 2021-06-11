@@ -38,8 +38,6 @@ import java.util.concurrent.locks.LockSupport;
 /**
  * Description:Dracc java客户端实现
  *
- * 注意:用来注册和注销服务实例的客户端实须一直保证存活(不要调用close(),并且保持对这个对象的引用),不然可能会出问题。
- * 建议整个JVM都用一个JDracc实例
  *
  * @author: Zeping Lu
  * @date: 2021/3/24 19:48
@@ -48,8 +46,24 @@ public class JDracc implements DraccClient, AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(JDracc.class);
 
+    /**
+     * 分布式锁前缀
+     */
+    private static final String LOCK_PREFIX = "lock-";
+
+    /**
+     * 本客户端是否已关闭标识
+     */
     private volatile boolean isClosed = false;
+
+    /**
+     * 和主节点的连接
+     */
     private Channel channelToLeader;
+
+    /**
+     * rpc超时时间,单位是ms
+     */
     private final int TIMEOUT;
 
     /**
@@ -57,7 +71,6 @@ public class JDracc implements DraccClient, AutoCloseable {
      * 由于注册实例是幂等操作,server端就算还是存在这个实例,也不会有影响
      */
     private Map<String, Set<String>> registeredInstances = new ConcurrentHashMap<>();
-
 
 
     /**
@@ -153,8 +166,8 @@ public class JDracc implements DraccClient, AutoCloseable {
     }
 
 
-    private String sentRpcAndGetResult(Thread currentThread,String command){
-        ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler.ThreadResultAndTime(System.currentTimeMillis() + TIMEOUT, currentThread);
+    private String sentRpcAndGetResult(Thread currentThread, String command, long timeout) {
+        ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler.ThreadResultAndTime(System.currentTimeMillis() + timeout, currentThread);
         ResultHandler.reqIdThreadMap.put(currentThread.getId(), threadResultAndTime);
         channelToLeader.writeAndFlush(command.getBytes(StandardCharsets.UTF_8));
         String result;
@@ -162,6 +175,11 @@ public class JDracc implements DraccClient, AutoCloseable {
             LockSupport.park();
         }
         return result;
+    }
+
+
+    private String sentRpcAndGetResult(Thread currentThread, String command) {
+        return sentRpcAndGetResult(currentThread, command, TIMEOUT);
     }
 
 
@@ -290,22 +308,21 @@ public class JDracc implements DraccClient, AutoCloseable {
 
 
     @Override
-    public List<String> getConfigs(String configName) throws DraccException {
+    public String getConfig(String configName) throws DraccException {
         Thread currentThread = Thread.currentThread();
         String result = sentRpcAndGetResult(currentThread, genCmdForGet(currentThread
                 .getId(), Const.ONE, Command.GET, configName));
-        try {
-            return CommonUtil.deserial(result);
-        } catch (Exception e) {
-            checkResult(result);
-            return null;
-        }
+        checkResult(result);
+        return result;
     }
 
 
     @Override
     public void acquireDistributedLock(String lockName) throws DraccException {
-
+        Thread currentThread = Thread.currentThread();
+        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
+                        .getId(), Const.ONE, Command.ADD, serviceName,
+                ((InetSocketAddress)channelToLeader.localAddress()).getAddress().getHostAddress())))
     }
 
 

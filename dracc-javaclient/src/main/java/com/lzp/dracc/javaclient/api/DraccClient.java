@@ -31,6 +31,7 @@ public interface DraccClient {
 
     /**
      * 注册一个服务实例
+     * 注意:服务名不要以"lock-"开头
      *
      * @param serviceName name of service
      * @param ip          instance ip
@@ -93,7 +94,6 @@ public interface DraccClient {
 
     /**
      * 添加一个配置
-     * 注意:添加的配置名不要和被监听的服务名一样
      *
      * @param configName name of config
      * @param configVal  value of config
@@ -121,7 +121,7 @@ public interface DraccClient {
      * @return A list of string(all configs)
      * @throws DraccException exception
      */
-    List<String> getConfigs(String configName) throws DraccException;
+    String getConfig(String configName) throws DraccException;
 
 
 

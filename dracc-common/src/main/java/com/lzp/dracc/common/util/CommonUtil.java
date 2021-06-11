@@ -18,10 +18,7 @@ package com.lzp.dracc.common.util;
 
 import com.lzp.dracc.common.constant.Const;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Description:一些通用的工具方法
@@ -41,7 +38,7 @@ public class CommonUtil {
         }
         StringBuilder stringBuilder = new StringBuilder(128);
         for (String element : set) {
-            stringBuilder.append(element).append(Const.COMMA);
+            stringBuilder.append(element).append(Const.COMMAND_SEPARATOR);
         }
         return stringBuilder.deleteCharAt(stringBuilder.length() - 1).toString();
     }
@@ -50,7 +47,7 @@ public class CommonUtil {
      * 字符串序列化成list,java客户端获取查询结果用
      */
     public static List<String> deserial(String elements) {
-        return new ArrayList<>(Arrays.asList(elements.split(Const.COMMA)));
+        return new ArrayList<>(Arrays.asList(elements.split(Const.COMMAND_SEPARATOR)));
     }
 
 }

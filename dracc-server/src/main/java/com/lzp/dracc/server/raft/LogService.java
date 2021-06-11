@@ -331,17 +331,15 @@ public class LogService {
              BufferedReader committedEntryReader = new BufferedReader(new FileReader(Const.ROOT_PATH + "persistence/committedEntry.txt"))) {
             byte[] bytes = new byte[bufferedOutputStream.available()];
             bufferedOutputStream.read(bytes);
-            RaftNode.data = (Map<String, Set<String>>[]) DataSearialUtil.deserialize(bytes).getObject();
+            RaftNode.data = (Map<String, Collection<String>>[]) DataSearialUtil.deserialize(bytes).getObject();
             String command;
             while ((command = committedEntryReader.readLine()) != null) {
                 parseAndExecuteCommand(command);
             }
         } catch (Exception e) {
-            RaftNode.data[0] = new ConcurrentHashMap<>();
-            RaftNode.data[1] = new HashMap<>();
-            for (int i = 0; i < 2; i++) {
-                RaftNode.data[i] = new HashMap<>(100000);
-            }
+            RaftNode.data[0] = new HashMap<>();
+            RaftNode.data[1] = new ConcurrentHashMap<>();
+            RaftNode.data[2] = new ConcurrentHashMap<>();
             LOGGER.error("restore state machine error", e);
         }
     }
