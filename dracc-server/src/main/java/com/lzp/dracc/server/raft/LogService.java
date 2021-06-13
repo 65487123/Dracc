@@ -331,7 +331,7 @@ public class LogService {
              BufferedReader committedEntryReader = new BufferedReader(new FileReader(Const.ROOT_PATH + "persistence/committedEntry.txt"))) {
             byte[] bytes = new byte[bufferedOutputStream.available()];
             bufferedOutputStream.read(bytes);
-            RaftNode.data = (Map<String, Collection<String>>[]) DataSearialUtil.deserialize(bytes).getObject();
+            RaftNode.data = (Map<String, Object>[]) DataSearialUtil.deserialize(bytes).getObject();
             String command;
             while ((command = committedEntryReader.readLine()) != null) {
                 parseAndExecuteCommand(command);
@@ -350,16 +350,25 @@ public class LogService {
      */
     private static void parseAndExecuteCommand(String command) {
         String[] commandDetails = command.split(Const.SPECIFICORDER_SEPARATOR);
-        byte dataType = Byte.parseByte(commandDetails[1]);
-        if (Command.ADD.equals(commandDetails[0])) {
-            Set<String> set;
-            if ((set = RaftNode.data[dataType].get(commandDetails[2])) == null) {
-                set = new HashSet<>();
-                RaftNode.data[dataType].put(commandDetails[2], set);
+        if (Const.ZERO.equals(commandDetails[1])) {
+            if (Command.ADD.equals(commandDetails[0])) {
+                Set<String> set;
+                if ((set = (Set<String>) RaftNode.data[0].get(commandDetails[2])) == null) {
+                    set = new HashSet<>();
+                    RaftNode.data[0].put(commandDetails[2], set);
+                }
+                set.add(commandDetails[3]);
+            } else {
+                ((Set<String>)RaftNode.data[0].get(commandDetails[2])).remove(commandDetails[3]);
             }
-            set.add(commandDetails[3]);
+        } else if (Const.ONE.equals(commandDetails[2])) {
+            if (Command.UPDATE.equals(commandDetails[0])) {
+                RaftNode.data[1].put(commandDetails[2],commandDetails[3]);
+            } else {
+                RaftNode.data[1].remove(commandDetails[2]);
+            }
         } else {
-            RaftNode.data[dataType].get(commandDetails[2]).remove(commandDetails[3]);
+
         }
     }
 

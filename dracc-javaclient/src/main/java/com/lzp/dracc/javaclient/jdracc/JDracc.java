@@ -292,10 +292,10 @@ public class JDracc implements DraccClient, AutoCloseable {
 
 
     @Override
-    public void addConfig(String configName, String configVal) throws DraccException {
+    public void updateConfig(String configName, String configVal) throws DraccException {
         Thread currentThread = Thread.currentThread();
         checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                .getId(), Const.ONE, Command.ADD, configName, configVal)));
+                .getId(), Const.ONE, Command.UPDATE, configName, configVal)));
     }
 
 
@@ -319,10 +319,10 @@ public class JDracc implements DraccClient, AutoCloseable {
 
     @Override
     public void acquireDistributedLock(String lockName) throws DraccException {
-        Thread currentThread = Thread.currentThread();
+        /*Thread currentThread = Thread.currentThread();
         checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
                         .getId(), Const.ONE, Command.ADD, serviceName,
-                ((InetSocketAddress)channelToLeader.localAddress()).getAddress().getHostAddress())))
+                ((InetSocketAddress)channelToLeader.localAddress()).getAddress().getHostAddress())))*/
     }
 
 

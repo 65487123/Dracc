@@ -326,9 +326,9 @@ public class RaftNode {
                     NioEventLoop已经在阻塞select()了,会唤醒他并执行任务(如果execute()的runnable
                     实现了NonWakeupRunnable,则不会唤醒)
                     */
-                    NettyServer.workerGroup.execute(() -> CoreHandler.handleWriteReq(
+                    NettyServer.workerGroup.execute(() -> CoreHandler.handleServiceWrite(true,
                             generCommandForDelService(serviceAndInstances.getKey(), instance),
-                            null, 0));
+                            null));
                 }
             }
         }

@@ -31,7 +31,10 @@ public interface DraccClient {
 
     /**
      * 注册一个服务实例
-     * 注意:服务名不要以"lock-"开头
+     * 注意:
+     * 1、注册的服务实例要和客户端本机ip一致
+     * 2、在关闭服务前不要close掉所有客户端(至少要保证一个客户端存活,不然注册的实例会被标记为不健康并移除)
+     * 3、关闭服务后需要close掉所有客户端,或者直接关停JVM。(这样服务才会自动被注册中心移除)
      *
      * @param serviceName name of service
      * @param ip          instance ip
@@ -93,13 +96,13 @@ public interface DraccClient {
 
 
     /**
-     * 添加一个配置
+     * 更新一个配置,原先不存在会添加
      *
      * @param configName name of config
      * @param configVal  value of config
      * @throws DraccException   exception
      */
-    void addConfig(String configName, String configVal) throws DraccException;
+    void updateConfig(String configName, String configVal) throws DraccException;
 
 
 
