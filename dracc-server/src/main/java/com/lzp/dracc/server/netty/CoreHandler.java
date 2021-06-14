@@ -302,7 +302,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 }
             } else {
                 //lock
-
+                handleLockWrite(command,channelHandlerContext);
             }
         }
     }
@@ -354,9 +354,9 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 处理获取释放锁请求
      */
-   /* public static void handleLockWrite(String[] command, ChannelHandlerContext channelHandlerContext, int dataType) {
+    public static void handleLockWrite(String[] command, ChannelHandlerContext channelHandlerContext) {
 
-        boolean isAdd = Command.ADD.equals(command[3]);
+        /*boolean isAdd = Command.ADD.equals(command[3]);
         if (checkWillChangeTheStateMachine(command, dataType, isAdd)) {
             CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
             RaftNode.cidAndResultMap.put(command[0], countDownLatch);
@@ -372,8 +372,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             repilicationThreadPool.execute(() -> receiveResponseAndMakeDecision(countDownLatch, command, channelHandlerContext, dataType, isAdd));
         } else {
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.FALSE).getBytes(UTF_8));
-        }
-    }*/
+        }*/
+    }
 
 
     /**

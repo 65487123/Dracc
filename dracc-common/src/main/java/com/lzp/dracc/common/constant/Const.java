@@ -50,6 +50,7 @@ public class Const {
     public static final String TIMEOUT = "timeout";
     public static final String ZERO = "0";
     public static final String ONE = "1";
+    public static final String TWO = "2";
 
     static {
         String path = PropertyUtil.class.getProtectionDomain().getCodeSource().getLocation().getPath();

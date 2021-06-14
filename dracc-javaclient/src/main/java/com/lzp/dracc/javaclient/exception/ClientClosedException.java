@@ -21,10 +21,10 @@ package com.lzp.dracc.javaclient.exception;
  * @author: Zeping Lu
  * @date: 2021/5/12 19:30
  */
-public class TimeoutException extends DraccException {
+public class ClientClosedException extends DraccException {
 
-    public TimeoutException() {
-        super("rpc time out");
+    public ClientClosedException() {
+        super("This client has been closed");
     }
 
 }

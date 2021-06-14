@@ -24,11 +24,12 @@ import com.lzp.dracc.javaclient.EventListener;
 import com.lzp.dracc.javaclient.api.DraccClient;
 import com.lzp.dracc.javaclient.exception.DraccException;
 import com.lzp.dracc.javaclient.exception.TheClusterIsDownException;
-import com.lzp.dracc.javaclient.exception.TimeoutException;
+import com.lzp.dracc.javaclient.exception.ClientClosedException;
 import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -52,6 +53,11 @@ public class JDracc implements DraccClient, AutoCloseable {
     private static final String LOCK_PREFIX = "lock-";
 
     /**
+     * 用分布式锁时会用到
+     */
+    private static final String JVM_NAME = ManagementFactory.getRuntimeMXBean().getName();
+
+    /**
      * 本客户端是否已关闭标识
      */
     private volatile boolean isClosed = false;
@@ -70,7 +76,7 @@ public class JDracc implements DraccClient, AutoCloseable {
      * 在本地保存一份通过这个客户端注册的所有实例,当与server失连并且重连后,重新再注册一遍
      * 由于注册实例是幂等操作,server端就算还是存在这个实例,也不会有影响
      */
-    private Map<String, Set<String>> registeredInstances = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> REGISTERED_INSTANCES = new ConcurrentHashMap<>();
 
 
     /**
@@ -112,7 +118,7 @@ public class JDracc implements DraccClient, AutoCloseable {
         HeartbeatWorker.stopHeartBeat(channelToLeader);
         if (resetChannelIfNecessary(ipAndPorts)) {
             try {
-                for (Map.Entry<String, Set<String>> entry : registeredInstances.entrySet()) {
+                for (Map.Entry<String, Set<String>> entry : REGISTERED_INSTANCES.entrySet()) {
                     for (String instance : entry.getValue()) {
                         registerInstance0(entry.getKey(), instance);
                     }
@@ -200,7 +206,7 @@ public class JDracc implements DraccClient, AutoCloseable {
         if (result.startsWith(Const.EXCEPTION)) {
             String content = result.substring(1);
             if (Const.TIMEOUT.equals(content)) {
-                throw new TimeoutException();
+                throw new ClientClosedException();
             } else if (Const.CLUSTER_DOWN_MESSAGE.equals(content)) {
                 throw new TheClusterIsDownException();
             } else {
@@ -319,10 +325,11 @@ public class JDracc implements DraccClient, AutoCloseable {
 
     @Override
     public void acquireDistributedLock(String lockName) throws DraccException {
-        /*Thread currentThread = Thread.currentThread();
+        Thread currentThread = Thread.currentThread();
         checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                        .getId(), Const.ONE, Command.ADD, serviceName,
-                ((InetSocketAddress)channelToLeader.localAddress()).getAddress().getHostAddress())))*/
+                        .getId(), Const.TWO, Command.ADD, LOCK_PREFIX + lockName,
+                ((InetSocketAddress) channelToLeader.localAddress()).getAddress()
+                        .getHostAddress() + Const.COLON + JVM_NAME + currentThread.getId())));
     }
 
 
@@ -334,12 +341,12 @@ public class JDracc implements DraccClient, AutoCloseable {
 
     private void addInstanceLocally(String name, String instance) {
         Set<String> instances;
-        if ((instances = registeredInstances.get(name)) == null) {
+        if ((instances = REGISTERED_INSTANCES.get(name)) == null) {
             synchronized (this) {
-                if ((instances = registeredInstances.get(name)) == null) {
+                if ((instances = REGISTERED_INSTANCES.get(name)) == null) {
                     instances = new CopyOnWriteArraySet<>();
                     instances.add(instance);
-                    registeredInstances.put(name, instances);
+                    REGISTERED_INSTANCES.put(name, instances);
                 } else {
                     instances.add(instance);
                 }
@@ -352,17 +359,29 @@ public class JDracc implements DraccClient, AutoCloseable {
 
     private void remInstanceLocally(String name, String instance) {
         Set<String> instances;
-        if ((instances = registeredInstances.get(name)) != null) {
+        if ((instances = REGISTERED_INSTANCES.get(name)) != null) {
             instances.remove(instance);
         }
     }
 
+    private void checkClientStatus() throws ClientClosedException {
+        if (isClosed){
+            throw new ClientClosedException();
+        }
+    }
 
+    /**
+     * 这个方法谨慎调用
+     * 如果是共用用的客户端
+     * 确保:
+     * 1、在调用这个方法时,没有其他线程在用这个客户端。(为了性能,通过客户端读写server数据时没有校验是否已关闭)
+     * 2、其他地方后面不可能再用到这个客户端。
+     */
     @Override
     public synchronized void close() throws Exception {
         isClosed = true;
         channelToLeader.close();
-        registeredInstances.clear();
+        REGISTERED_INSTANCES.clear();
     }
 
     @Override
