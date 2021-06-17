@@ -49,7 +49,7 @@ public class RaftNode {
     /**
      * 延迟任务
      */
-    private static class DelayTask implements Delayed,Runnable{
+    private static class DelayTask implements Delayed, Runnable {
 
         Runnable runnable;
         volatile long deadline;
@@ -137,7 +137,7 @@ public class RaftNode {
     /**
      * 真正的数据(状态机)
      */
-    public static Map<String,Object>[] data = new Map[3];
+    public static Map<String, Object>[] data = new Map[3];
 
     /**
      * 所有将要被发送的通知

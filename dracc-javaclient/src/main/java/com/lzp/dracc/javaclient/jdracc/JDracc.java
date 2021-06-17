@@ -24,7 +24,7 @@ import com.lzp.dracc.javaclient.EventListener;
 import com.lzp.dracc.javaclient.api.DraccClient;
 import com.lzp.dracc.javaclient.exception.DraccException;
 import com.lzp.dracc.javaclient.exception.TheClusterIsDownException;
-import com.lzp.dracc.javaclient.exception.ClientClosedException;
+import com.lzp.dracc.javaclient.exception.TimeoutException;
 import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -82,13 +82,23 @@ public class JDracc implements DraccClient, AutoCloseable {
     /**
      * 创建一个Dracc集群的客户端
      *
-     * @param timeout     读写dracc的超时时间,单位是毫秒,超过这个时间没响应会抛出异常
+     * @param timeout    读写dracc的超时时间,单位是毫秒,超过这个时间没响应会抛出异常
      * @param ipAndPorts dracc集群所有节点的ip及端口
-     * @throws DraccException   exception
+     * @throws DraccException exception
      */
     public JDracc(int timeout, String... ipAndPorts) throws InterruptedException, DraccException {
         setUpChannelToLeader(ipAndPorts);
         this.TIMEOUT = timeout;
+    }
+
+    /**
+     * 创建一个Dracc集群的客户端
+     *
+     * @param ipAndPorts dracc集群所有节点的ip及端口
+     * @throws DraccException exception
+     */
+    public JDracc(String... ipAndPorts) throws InterruptedException, DraccException {
+        this(5000, ipAndPorts);
     }
 
 
@@ -195,31 +205,36 @@ public class JDracc implements DraccClient, AutoCloseable {
                 + key + Const.COMMAND_SEPARATOR + value;
     }
 
-
-    private String genCmdForGet(long threadId, String dataType, String operType, String key) {
+    private String generateRemConfigCmd(long threadId, String key) {
         return threadId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
-                + dataType + Const.COMMAND_SEPARATOR + operType + Const.COMMAND_SEPARATOR + key;
+                + Const.ONE + Const.COMMAND_SEPARATOR + Command.REM + Const.COMMAND_SEPARATOR + key;
     }
 
 
-    private void checkResult(String result) throws DraccException {
+    private String genCmdForGet(long threadId, String dataType, String key) {
+        return threadId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
+                + dataType + Const.COMMAND_SEPARATOR + Command.GET + Const.COMMAND_SEPARATOR + key;
+    }
+
+
+    private String checkResult(String result) throws DraccException {
         if (result.startsWith(Const.EXCEPTION)) {
             String content = result.substring(1);
             if (Const.TIMEOUT.equals(content)) {
-                throw new ClientClosedException();
+                throw new TimeoutException();
             } else if (Const.CLUSTER_DOWN_MESSAGE.equals(content)) {
                 throw new TheClusterIsDownException();
             } else {
                 throw new DraccException(content);
             }
         }
+        return result;
     }
-
 
 
     @Override
     public void registerInstance(String serviceName, String ip, int port) throws DraccException {
-        registerInstance0(serviceName,ip + Const.COLON + port);
+        registerInstance0(serviceName, ip + Const.COLON + port);
     }
 
 
@@ -247,7 +262,7 @@ public class JDracc implements DraccClient, AutoCloseable {
     public List<String> getAllInstances(String serviceName) throws DraccException {
         Thread currentThread = Thread.currentThread();
         String result = sentRpcAndGetResult(currentThread, genCmdForGet(currentThread
-                .getId(), Const.ZERO, Command.GET, serviceName));
+                .getId(), Const.ZERO, serviceName));
         try {
             return CommonUtil.deserial(result);
         } catch (Exception e) {
@@ -278,7 +293,7 @@ public class JDracc implements DraccClient, AutoCloseable {
         Thread currentThread = Thread.currentThread();
         checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
                         .getId(), Const.ONE, Command.ADD, serviceName,
-                ((InetSocketAddress)channelToLeader.localAddress()).getAddress().getHostAddress())));
+                ((InetSocketAddress) channelToLeader.localAddress()).getAddress().getHostAddress())));
     }
 
 
@@ -291,25 +306,25 @@ public class JDracc implements DraccClient, AutoCloseable {
                 Thread currentThread = Thread.currentThread();
                 checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
                                 .getId(), Const.ONE, Command.REM, serviceName,
-                        ((InetSocketAddress)channelToLeader.localAddress()).getAddress().getHostAddress())));
+                        ((InetSocketAddress) channelToLeader.localAddress()).getAddress().getHostAddress())));
             }
         }
     }
 
 
     @Override
-    public void updateConfig(String configName, String configVal) throws DraccException {
+    public String updateConfig(String configName, String configVal) throws DraccException {
         Thread currentThread = Thread.currentThread();
-        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
+        return checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
                 .getId(), Const.ONE, Command.UPDATE, configName, configVal)));
     }
 
 
     @Override
-    public void removeConfig(String configName, String configVal) throws DraccException {
+    public String removeConfig(String configName, String configVal) throws DraccException {
         Thread currentThread = Thread.currentThread();
-        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                .getId(), Const.ONE, Command.REM, configName, configVal)));
+        return checkResult(sentRpcAndGetResult(currentThread, generateRemConfigCmd(currentThread
+                .getId(), configName)));
     }
 
 
@@ -317,25 +332,29 @@ public class JDracc implements DraccClient, AutoCloseable {
     public String getConfig(String configName) throws DraccException {
         Thread currentThread = Thread.currentThread();
         String result = sentRpcAndGetResult(currentThread, genCmdForGet(currentThread
-                .getId(), Const.ONE, Command.GET, configName));
+                .getId(), Const.ONE, configName));
         checkResult(result);
         return result;
     }
 
 
     @Override
-    public void acquireDistributedLock(String lockName) throws DraccException {
+    public int acquireDistributedLock(String lockName) {
         Thread currentThread = Thread.currentThread();
-        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                        .getId(), Const.TWO, Command.ADD, LOCK_PREFIX + lockName,
-                ((InetSocketAddress) channelToLeader.localAddress()).getAddress()
-                        .getHostAddress() + Const.COLON + JVM_NAME + currentThread.getId())));
+        try {
+            return Integer.parseInt(checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
+                            .getId(), Const.TWO, Command.ADD, LOCK_PREFIX + lockName,
+                    ((InetSocketAddress) channelToLeader.localAddress()).getAddress()
+                            .getHostAddress() + Const.COLON + JVM_NAME + currentThread.getId()))));
+        } catch (DraccException e) {
+            return acquireDistributedLock(lockName);
+        }
     }
 
 
     @Override
-    public void releaseDistributedlock(String lockName) throws DraccException {
-
+    public int releaseDistributedlock(String lockName) throws DraccException {
+        return 0;
     }
 
 
@@ -364,18 +383,12 @@ public class JDracc implements DraccClient, AutoCloseable {
         }
     }
 
-    private void checkClientStatus() throws ClientClosedException {
-        if (isClosed){
-            throw new ClientClosedException();
-        }
-    }
-
     /**
      * 这个方法谨慎调用
      * 如果是共用用的客户端
      * 确保:
-     * 1、在调用这个方法时,没有其他线程在用这个客户端。(为了性能,通过客户端读写server数据时没有校验是否已关闭)
-     * 2、其他地方后面不可能再用到这个客户端。
+     * 1、在调用这个方法时,没有其他线程在用这个客户端。
+     * 2、其他地方后面不可能再用到这个客户端。(为了性能,通过客户端读写server数据时没有校验是否已关闭)
      */
     @Override
     public synchronized void close() throws Exception {

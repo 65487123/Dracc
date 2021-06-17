@@ -39,34 +39,31 @@ public interface DraccClient {
      * @param serviceName name of service
      * @param ip          instance ip
      * @param port        instance port
-     * @throws DraccException   exception
+     * @throws DraccException exception
      */
     void registerInstance(String serviceName, String ip, int port) throws DraccException;
-
 
 
     /**
      * 注销一个服务实例
      * 注意：由谁注册的实例就由谁来注销。不然可能会出问题
      *
-     * @param serviceName name of service
-     * @param ip          instance ip
-     * @param port        instance port
-     * @throws DraccException   exception
+     * @param serviceName 服务名 (唯一id)
+     * @param ip          实例ip
+     * @param port        实例端口
+     * @throws DraccException exception
      */
     void deregisterInstance(String serviceName, String ip, int port) throws DraccException;
-
 
 
     /**
      * 获取服务的所有实例
      *
-     * @param serviceName name of service
-     * @return A list of string(In the form of ip:port)
+     * @param serviceName 服务名 (唯一id)
+     * @return 实例list(以ip : port的形式)
      * @throws DraccException exception
      */
     List<String> getAllInstances(String serviceName) throws DraccException;
-
 
 
     /**
@@ -83,38 +80,36 @@ public interface DraccClient {
     void subscribe(String serviceName, EventListener listener) throws DraccException;
 
 
-
     /**
      * 取消对某个服务的订阅
      *
-     * @param serviceName name of service
-     * @param listener    event listener
+     * @param serviceName 服务名 (唯一id)
+     * @param listener    事件监听器
      * @throws DraccException exception
      */
     void unsubscribe(String serviceName, EventListener listener) throws DraccException;
 
 
-
     /**
      * 更新一个配置,原先不存在会添加
      *
-     * @param configName name of config
-     * @param configVal  value of config
-     * @throws DraccException   exception
+     * @param configName 配置名(唯一id)
+     * @param configVal  配置的值
+     * @return 原有的配置
+     * @throws DraccException exception
      */
-    void updateConfig(String configName, String configVal) throws DraccException;
-
+    String updateConfig(String configName, String configVal) throws DraccException;
 
 
     /**
      * 移除一个配置
      *
-     * @param configName name of config
+     * @param configName 配置名(唯一id)
      * @param configVal  value of config
-     * @throws DraccException   exception
+     * @return 原有配置
+     * @throws DraccException exception
      */
-    void removeConfig(String configName, String configVal) throws DraccException;
-
+    String removeConfig(String configName, String configVal) throws DraccException;
 
 
     /**
@@ -127,28 +122,28 @@ public interface DraccClient {
     String getConfig(String configName) throws DraccException;
 
 
-
     /**
      * Acquire a distributed lock.
      *
      * @param lockName name of lock
+     * @return 当前锁被加锁次数
      * @throws DraccException exception
      */
-    void acquireDistributedLock(String lockName) throws DraccException;
-
+    int acquireDistributedLock(String lockName) throws DraccException;
 
 
     /**
      * Release the distributed lock.
      *
      * @param lockName name of lock
+     * @return 当前锁被加锁次数。  如果释放的锁是根本不在加锁状态,返回-1
      * @throws DraccException exception
      */
-    void releaseDistributedlock(String lockName) throws DraccException;
+    int releaseDistributedlock(String lockName) throws DraccException;
 
 
     /**
-     * @return  true If the client has been closed , otherwise false
+     * @return true If the client has been closed , otherwise false
      */
     boolean isClosed();
 
