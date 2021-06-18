@@ -123,23 +123,29 @@ public interface DraccClient {
 
 
     /**
-     * Acquire a distributed lock.
-     *
-     * @param lockName name of lock
-     * @return 当前锁被加锁次数
+     * 获取分布式锁
+     * 同一个线程可以获取多次(可重入)
+     * @param lockName 锁名(唯一id)
      * @throws DraccException exception
      */
-    int acquireDistributedLock(String lockName) throws DraccException;
+    void acquireDistributedLock(String lockName) throws DraccException;
 
 
     /**
-     * Release the distributed lock.
+     * 释放分布式锁
+     * 注意：虽然一个线程可以多次获取一把分布式锁,但是只要释放一次,这个线程就会释放这把锁。
+     * <p>
+     * server端没有对锁的获取次数进行计数(一个线程获取一次加一, 释放一次就减一)。
+     * 因为这样可能会出现问题:当一个线程在获取锁时,成功拿到锁,server端计数器已经加一,然
+     * 而在返回结果时网络断了,这样客户端如果重新执行获取锁操作,就会出现问题(获取一次锁,计数器加了多次)。
+     * <p>
+     * 总而言之,如果server端计数,获取锁和释放锁就不是幂等操作了。
      *
-     * @param lockName name of lock
+     * @param lockName 锁名(唯一id)
      * @return 当前锁被加锁次数。  如果释放的锁是根本不在加锁状态,返回-1
      * @throws DraccException exception
      */
-    int releaseDistributedlock(String lockName) throws DraccException;
+    void releaseDistributedlock(String lockName) throws DraccException;
 
 
     /**

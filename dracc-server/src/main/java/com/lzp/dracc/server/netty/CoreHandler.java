@@ -458,15 +458,18 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private static void acquireLock(String[] command, ChannelHandlerContext channelHandlerContext) {
         List<String> locks;
+        int index;
         if ((locks = (List<String>) RaftNode.data[3].get(command[3])) == null) {
-            locks = new ArrayList<>();
+            locks = new LinkedList<>();
             locks.add(command[4]);
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         } else if (locks.size() == 0) {
             locks.add(command[4]);
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
-        } else if (!locks.contains(command[4])) {
+        } else if ((index = locks.indexOf(command[4])) == -1) {
             locks.add(command[4]);
+        } else if (index == 0) {
+            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         }
     }
 
@@ -475,9 +478,9 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 释放分布式锁逻辑
      */
     private static void releaseLock(String[] command, ChannelHandlerContext channelHandlerContext) {
-        List<String> locks;
+        LinkedList<String> locks;
         //只有当前持有锁才有释放锁的权力
-        if ((locks = (List<String>) RaftNode.data[3].get(command[3])) != null && command[4].equals(locks.get(0))) {
+        if ((locks = (LinkedList<String>) RaftNode.data[3].get(command[3])) != null && command[4].equals(locks.getFirst())) {
             locks.remove(0);
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
             if (locks.size() > 0) {

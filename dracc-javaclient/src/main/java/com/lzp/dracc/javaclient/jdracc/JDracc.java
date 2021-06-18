@@ -48,14 +48,9 @@ public class JDracc implements DraccClient, AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(JDracc.class);
 
     /**
-     * 分布式锁前缀
+     * jvm的进程号,用分布式锁时会用到
      */
-    private static final String LOCK_PREFIX = "lock-";
-
-    /**
-     * 用分布式锁时会用到
-     */
-    private static final String JVM_NAME = ManagementFactory.getRuntimeMXBean().getName();
+    private static final long JVM_PID ;
 
     /**
      * 本客户端是否已关闭标识
@@ -78,6 +73,11 @@ public class JDracc implements DraccClient, AutoCloseable {
      */
     private final Map<String, Set<String>> REGISTERED_INSTANCES = new ConcurrentHashMap<>();
 
+
+    static {
+        String jvmName;
+        JVM_PID = Long.parseLong((jvmName = ManagementFactory.getRuntimeMXBean().getName()).substring(0, jvmName.indexOf('@')));
+    }
 
     /**
      * 创建一个Dracc集群的客户端
@@ -339,22 +339,21 @@ public class JDracc implements DraccClient, AutoCloseable {
 
 
     @Override
-    public int acquireDistributedLock(String lockName) {
+    public void acquireDistributedLock(String lockName) {
         Thread currentThread = Thread.currentThread();
         try {
-            return Integer.parseInt(checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                            .getId(), Const.TWO, Command.ADD, LOCK_PREFIX + lockName,
+            checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
+                            .getId(), Const.TWO, Command.ADD, lockName,
                     ((InetSocketAddress) channelToLeader.localAddress()).getAddress()
-                            .getHostAddress() + Const.COLON + JVM_NAME + currentThread.getId()))));
+                            .getHostAddress())));
         } catch (DraccException e) {
-            return acquireDistributedLock(lockName);
+            acquireDistributedLock(lockName);
         }
     }
 
 
     @Override
-    public int releaseDistributedlock(String lockName) throws DraccException {
-        return 0;
+    public void releaseDistributedlock(String lockName) throws DraccException {
     }
 
 
@@ -400,6 +399,15 @@ public class JDracc implements DraccClient, AutoCloseable {
     @Override
     public boolean isClosed() {
         return isClosed;
+    }
+
+
+    /**
+     * 通过进程号和线程号生成唯一id
+     */
+    private long generHostUniqueNumByTid(long threadId) {
+        //Linux内核的进程PID是32768(32 位系统)和2的22次方(64位系统)所以可以这样操作
+        return JVM_PID << 23 + JVM_PID;
     }
 
 }
