@@ -19,6 +19,7 @@ package com.lzp.dracc.server.raft;
 import com.lzp.dracc.common.constant.Command;
 import com.lzp.dracc.common.constant.Const;
 import com.lzp.dracc.common.util.PropertyUtil;
+import com.lzp.dracc.common.util.StringUtil;
 import com.lzp.dracc.server.util.Data;
 import com.lzp.dracc.server.util.DataSearialUtil;
 import org.slf4j.Logger;
@@ -349,7 +350,7 @@ public class LogService {
      * 执行写状态机的具体操作
      */
     private static void parseAndExecuteCommand(String command) {
-        String[] commandDetails = command.split(Const.SPECIFICORDER_SEPARATOR);
+        String[] commandDetails = StringUtil.stringSplit(command, Const.SPECIFICORDER_SEPARATOR);
         if (Const.ZERO.equals(commandDetails[1])) {
             if (Command.ADD.equals(commandDetails[0])) {
                 Set<String> set;
@@ -359,11 +360,11 @@ public class LogService {
                 }
                 set.add(commandDetails[3]);
             } else {
-                ((Set<String>)RaftNode.data[0].get(commandDetails[2])).remove(commandDetails[3]);
+                ((Set<String>) RaftNode.data[0].get(commandDetails[2])).remove(commandDetails[3]);
             }
         } else if (Const.ONE.equals(commandDetails[2])) {
             if (Command.UPDATE.equals(commandDetails[0])) {
-                RaftNode.data[1].put(commandDetails[2],commandDetails[3]);
+                RaftNode.data[1].put(commandDetails[2], commandDetails[3]);
             } else {
                 RaftNode.data[1].remove(commandDetails[2]);
             }

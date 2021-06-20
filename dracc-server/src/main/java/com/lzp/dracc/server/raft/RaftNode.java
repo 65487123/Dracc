@@ -20,6 +20,7 @@ import com.lzp.dracc.common.constant.Command;
 import com.lzp.dracc.common.constant.Const;
 import com.lzp.dracc.common.util.CommonUtil;
 import com.lzp.dracc.common.util.PropertyUtil;
+import com.lzp.dracc.common.util.StringUtil;
 import com.lzp.dracc.common.util.ThreadFactoryImpl;
 import com.lzp.dracc.server.netty.ConnectionFactory;
 import com.lzp.dracc.server.netty.NettyServer;
@@ -156,10 +157,10 @@ public class RaftNode {
         String localNode = clusterProperties.getProperty("localRaftNode");
         LOGGER.info("server:'{}' is starting", localNode);
         term = Long.parseLong(LogService.getTerm());
-        String[] remoteNodeIps = clusterProperties.getProperty("peerRaftNodes").split(Const.COMMA);
+        String[] remoteNodeIps = StringUtil.stringSplit(clusterProperties.getProperty("peerRaftNodes"), Const.COMMA);
         setReconnectionExecutor(remoteNodeIps.length);
         HALF_COUNT = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
-        String[] localIpAndPort = localNode.split(Const.COLON);
+        String[] localIpAndPort = StringUtil.stringSplit(localNode, Const.COLON);
         NettyServer.start(localIpAndPort[0], Integer.parseInt(localIpAndPort[1]));
         setThreadPoolForPerformElectTasks();
         ELECTION_TASK = new DelayTask(() -> {
@@ -205,7 +206,7 @@ public class RaftNode {
         ExecutorService threadPoolExecutor = new ThreadPoolExecutor(remoteNodeIps.length, remoteNodeIps
                 .length, 0, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("ask for vote"));
         for (String remoteNodeIp : remoteNodeIps) {
-            String[] ipAndPort = remoteNodeIp.split(Const.COLON);
+            String[] ipAndPort = StringUtil.stringSplit(remoteNodeIp, Const.COLON);
             threadPoolExecutor.execute(() -> sendRpcAndSaveChannel(term, voteRequestId, ipAndPort[0], ipAndPort[1]));
         }
         try {

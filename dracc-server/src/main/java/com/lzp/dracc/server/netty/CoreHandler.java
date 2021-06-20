@@ -19,6 +19,7 @@ package com.lzp.dracc.server.netty;
 import com.lzp.dracc.common.constant.Command;
 import com.lzp.dracc.common.constant.Const;
 import com.lzp.dracc.common.util.CommonUtil;
+import com.lzp.dracc.common.util.StringUtil;
 import com.lzp.dracc.common.util.ThreadFactoryImpl;
 import com.lzp.dracc.server.raft.LogService;
 import com.lzp.dracc.server.raft.RaftNode;
@@ -33,6 +34,7 @@ import io.netty.util.concurrent.GenericFutureListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -108,7 +110,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
-        String[] command = new String(bytes, UTF_8).split(Const.COMMAND_SEPARATOR);
+        String[] command = StringUtil.stringSplit(new String(bytes, UTF_8), Const.COMMAND_SEPARATOR);
         //分支不是特别多的情况下,if/else性能比switch要高,尤其是把高频率的分支放在前面
         if (Const.RPC_FROMCLIENT.equals(command[1])) {
             handleClientReq(command, channelHandlerContext);
@@ -461,13 +463,13 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         int index;
         if ((locks = (List<String>) RaftNode.data[3].get(command[3])) == null) {
             locks = new LinkedList<>();
-            locks.add(command[4]);
+            locks.add(command[4] + Const.COLON + command[0]);
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         } else if (locks.size() == 0) {
-            locks.add(command[4]);
+            locks.add(command[4] + Const.COLON + command[0]);
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         } else if ((index = locks.indexOf(command[4])) == -1) {
-            locks.add(command[4]);
+            locks.add(command[4] + Const.COLON + command[0]);
         } else if (index == 0) {
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         }
@@ -481,10 +483,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         LinkedList<String> locks;
         //只有当前持有锁才有释放锁的权力
         if ((locks = (LinkedList<String>) RaftNode.data[3].get(command[3])) != null && command[4].equals(locks.getFirst())) {
-            locks.remove(0);
+            locks.removeFirst();
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
             if (locks.size() > 0) {
-                //wakeUpTheFirstInQueue()
+                wakeUpWaiter(locks.getFirst());
             }
         } else {
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.FALSE).getBytes(UTF_8));
@@ -494,8 +496,14 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 唤醒等待锁释放队列中的第一个
      */
-    private static void wakeUpTheFirstInQueue(String instance) {
-
+    private static void wakeUpWaiter(String waiter) {
+        String[] ipAndCommandId = StringUtil.stringSplit(waiter, Const.COLON);
+        for (Channel channel : RaftNode.CHANNELS_WITH_CLIENT) {
+            if (ipAndCommandId[0].equals(((InetSocketAddress) channel.remoteAddress())
+                    .getAddress().getHostAddress())) {
+                channel.writeAndFlush((ipAndCommandId[1] + Const.COLON + Const.TRUE).getBytes(UTF_8));
+            }
+        }
     }
 
 

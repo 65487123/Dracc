@@ -19,6 +19,7 @@ package com.lzp.dracc.javaclient.jdracc;
 
 import com.lzp.dracc.common.constant.Const;
 import com.lzp.dracc.common.util.CommonUtil;
+import com.lzp.dracc.common.util.StringUtil;
 import com.lzp.dracc.common.util.ThreadFactoryImpl;
 import com.lzp.dracc.javaclient.EventListener;
 import io.netty.channel.ChannelHandlerContext;
@@ -74,7 +75,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * Description:key是发起rpc请求后被阻塞的线程id，value是待唤醒的线程和超时时间
      */
-    public static Map<Long, ThreadResultAndTime> reqIdThreadMap = new ConcurrentHashMap<>();
+    public static Map<String, ThreadResultAndTime> reqIdThreadMap = new ConcurrentHashMap<>();
 
     /**
      * Description:key是监听的服务名，这个服务名的监听器
@@ -89,7 +90,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
             long now;
             while (true) {
                 now = System.currentTimeMillis();
-                for (Map.Entry<Long, ThreadResultAndTime> entry : reqIdThreadMap.entrySet()) {
+                for (Map.Entry<String, ThreadResultAndTime> entry : reqIdThreadMap.entrySet()) {
                     //漏网之鱼会在下次被揪出来
                     if (entry.getValue().deadLine < now) {
                         ThreadResultAndTime threadResultAndTime = reqIdThreadMap.remove(entry.getKey());
@@ -108,14 +109,14 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
-        String[] threadIdAndResult = new String(bytes, StandardCharsets.UTF_8).split(Const.COLON);
+        String[] threadIdAndResult = StringUtil.stringSplit(new String(bytes, StandardCharsets.UTF_8), Const.COLON);
         ThreadResultAndTime threadResultAndTime = reqIdThreadMap.remove(Long.parseLong(threadIdAndResult[0]));
         if (threadResultAndTime != null) {
             threadResultAndTime.result = threadIdAndResult[1];
             LockSupport.unpark(threadResultAndTime.thread);
         } else {
             try {
-                String[] nameAndInstances = threadIdAndResult[1].split(Const.COMMAND_SEPARATOR);
+                String[] nameAndInstances = StringUtil.stringSplit(threadIdAndResult[1], Const.COMMAND_SEPARATOR);
                 Set<EventListener> eventListenerList = serviceNameListenerMap.get(nameAndInstances[0]);
                 List<String> latestInstances = CommonUtil.deserial(nameAndInstances[1]);
                 for (EventListener eventListener : eventListenerList) {

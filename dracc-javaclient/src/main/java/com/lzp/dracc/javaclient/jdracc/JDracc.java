@@ -50,7 +50,7 @@ public class JDracc implements DraccClient, AutoCloseable {
     /**
      * jvm的进程号,用分布式锁时会用到
      */
-    private static final long JVM_PID ;
+    private static final long JVM_PID;
 
     /**
      * 本客户端是否已关闭标识
@@ -163,7 +163,7 @@ public class JDracc implements DraccClient, AutoCloseable {
         Channel channel = ConnectionFactory.newChannel(ipAndPort);
         Thread thisThread = Thread.currentThread();
         ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler.ThreadResultAndTime(System.currentTimeMillis() + 5000, thisThread);
-        ResultHandler.reqIdThreadMap.put(thisThread.getId(), threadResultAndTime);
+        ResultHandler.reqIdThreadMap.put(thisThread.getName(), threadResultAndTime);
         channel.writeAndFlush(Const.RPC_GETROLE.getBytes(StandardCharsets.UTF_8));
         String result;
         while ((result = threadResultAndTime.getResult()) == null) {
@@ -182,9 +182,10 @@ public class JDracc implements DraccClient, AutoCloseable {
     }
 
 
-    private String sentRpcAndGetResult(Thread currentThread, String command, long timeout) {
-        ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler.ThreadResultAndTime(System.currentTimeMillis() + timeout, currentThread);
-        ResultHandler.reqIdThreadMap.put(currentThread.getId(), threadResultAndTime);
+    private String sentRpcAndGetResult(String commandId,Thread currentThread, String command, long timeout) {
+        ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler
+                .ThreadResultAndTime(System.currentTimeMillis() + timeout, currentThread);
+        ResultHandler.reqIdThreadMap.put(currentThread.getName(), threadResultAndTime);
         channelToLeader.writeAndFlush(command.getBytes(StandardCharsets.UTF_8));
         String result;
         while ((result = threadResultAndTime.getResult()) == null) {
@@ -194,25 +195,25 @@ public class JDracc implements DraccClient, AutoCloseable {
     }
 
 
-    private String sentRpcAndGetResult(Thread currentThread, String command) {
-        return sentRpcAndGetResult(currentThread, command, TIMEOUT);
+    private String sentRpcAndGetResult(String commandId, Thread currentThread, String command) {
+        return sentRpcAndGetResult(commandId, currentThread, command, TIMEOUT);
     }
 
 
-    private String generateCommand(long threadId, String dataType, String operType, String key, String value) {
-        return threadId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
+    private String generateCommand(String commandId, String dataType, String operType, String key, String value) {
+        return commandId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
                 + dataType + Const.COMMAND_SEPARATOR + operType + Const.COMMAND_SEPARATOR
                 + key + Const.COMMAND_SEPARATOR + value;
     }
 
-    private String generateRemConfigCmd(long threadId, String key) {
-        return threadId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
+    private String generateRemConfigCmd(String commandId, String key) {
+        return commandId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
                 + Const.ONE + Const.COMMAND_SEPARATOR + Command.REM + Const.COMMAND_SEPARATOR + key;
     }
 
 
-    private String genCmdForGet(long threadId, String dataType, String key) {
-        return threadId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
+    private String genCmdForGet(String commandId, String dataType, String key) {
+        return commandId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
                 + dataType + Const.COMMAND_SEPARATOR + Command.GET + Const.COMMAND_SEPARATOR + key;
     }
 
@@ -239,9 +240,10 @@ public class JDracc implements DraccClient, AutoCloseable {
 
 
     private void registerInstance0(String serviceName, String instance) throws DraccException {
-        Thread currentThread = Thread.currentThread();
-        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                .getId(), Const.ZERO, Command.ADD, serviceName, instance)));
+        Thread currentThread;
+        String threadName = (currentThread = Thread.currentThread()).getName();
+        checkResult(sentRpcAndGetResult(threadName, currentThread, generateCommand(threadName,
+                Const.ZERO, Command.ADD, serviceName, instance)));
         addInstanceLocally(serviceName, instance);
     }
 
@@ -252,17 +254,19 @@ public class JDracc implements DraccClient, AutoCloseable {
     }
 
     public void deregisterInstance0(String serviceName, String instance) throws DraccException {
-        Thread currentThread = Thread.currentThread();
-        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                .getId(), Const.ZERO, Command.REM, serviceName, instance)));
+        Thread currentThread;
+        String threadName = (currentThread = Thread.currentThread()).getName();
+        checkResult(sentRpcAndGetResult(threadName, currentThread, generateCommand(threadName,
+                Const.ZERO, Command.REM, serviceName, instance)));
         remInstanceLocally(serviceName, instance);
     }
 
     @Override
     public List<String> getAllInstances(String serviceName) throws DraccException {
-        Thread currentThread = Thread.currentThread();
-        String result = sentRpcAndGetResult(currentThread, genCmdForGet(currentThread
-                .getId(), Const.ZERO, serviceName));
+        Thread currentThread;
+        String threadName = (currentThread = Thread.currentThread()).getName();
+        String result = sentRpcAndGetResult(threadName, currentThread, genCmdForGet(threadName,
+                Const.ZERO, serviceName));
         try {
             return CommonUtil.deserial(result);
         } catch (Exception e) {
@@ -290,10 +294,11 @@ public class JDracc implements DraccClient, AutoCloseable {
 
 
     private void subscribe0(String serviceName) throws DraccException {
-        Thread currentThread = Thread.currentThread();
-        checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                        .getId(), Const.ONE, Command.ADD, serviceName,
-                ((InetSocketAddress) channelToLeader.localAddress()).getAddress().getHostAddress())));
+        Thread currentThread;
+        String threadName = (currentThread = Thread.currentThread()).getName();
+        checkResult(sentRpcAndGetResult(threadName, currentThread, generateCommand(threadName, Const.ONE,
+                Command.ADD, serviceName, ((InetSocketAddress) channelToLeader.localAddress())
+                        .getAddress().getHostAddress())));
     }
 
 
@@ -303,10 +308,11 @@ public class JDracc implements DraccClient, AutoCloseable {
         if ((eventListeners = ResultHandler.serviceNameListenerMap.get(serviceName)) != null) {
             eventListeners.remove(listener);
             if (eventListeners.size() == 0) {
-                Thread currentThread = Thread.currentThread();
-                checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                                .getId(), Const.ONE, Command.REM, serviceName,
-                        ((InetSocketAddress) channelToLeader.localAddress()).getAddress().getHostAddress())));
+                Thread currentThread;
+                String threadName = (currentThread = Thread.currentThread()).getName();
+                checkResult(sentRpcAndGetResult(threadName, currentThread, generateCommand(threadName,
+                        Const.ONE, Command.REM, serviceName, ((InetSocketAddress) channelToLeader
+                                .localAddress()).getAddress().getHostAddress())));
             }
         }
     }
@@ -314,25 +320,28 @@ public class JDracc implements DraccClient, AutoCloseable {
 
     @Override
     public String updateConfig(String configName, String configVal) throws DraccException {
-        Thread currentThread = Thread.currentThread();
-        return checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                .getId(), Const.ONE, Command.UPDATE, configName, configVal)));
+        Thread currentThread;
+        String threadName = (currentThread = Thread.currentThread()).getName();
+        return checkResult(sentRpcAndGetResult(threadName, currentThread,
+                generateCommand(threadName, Const.ONE, Command.UPDATE, configName, configVal)));
     }
 
 
     @Override
     public String removeConfig(String configName, String configVal) throws DraccException {
-        Thread currentThread = Thread.currentThread();
-        return checkResult(sentRpcAndGetResult(currentThread, generateRemConfigCmd(currentThread
-                .getId(), configName)));
+        Thread currentThread;
+        String threadName = (currentThread = Thread.currentThread()).getName();
+        return checkResult(sentRpcAndGetResult(threadName, currentThread,
+                generateRemConfigCmd(threadName, configName)));
     }
 
 
     @Override
     public String getConfig(String configName) throws DraccException {
-        Thread currentThread = Thread.currentThread();
-        String result = sentRpcAndGetResult(currentThread, genCmdForGet(currentThread
-                .getId(), Const.ONE, configName));
+        Thread currentThread;
+        String threadName = (currentThread = Thread.currentThread()).getName();
+        String result = sentRpcAndGetResult(threadName, currentThread,
+                genCmdForGet(threadName, Const.ONE, configName));
         checkResult(result);
         return result;
     }
@@ -340,12 +349,13 @@ public class JDracc implements DraccClient, AutoCloseable {
 
     @Override
     public void acquireDistributedLock(String lockName) {
-        Thread currentThread = Thread.currentThread();
+        Thread currentThread;
+        String threadName = (currentThread = Thread.currentThread()).getName();
         try {
-            checkResult(sentRpcAndGetResult(currentThread, generateCommand(currentThread
-                            .getId(), Const.TWO, Command.ADD, lockName,
-                    ((InetSocketAddress) channelToLeader.localAddress()).getAddress()
-                            .getHostAddress())));
+            checkResult(sentRpcAndGetResult(JVM_PID + threadName, currentThread,
+                    generateCommand(threadName, Const.TWO, Command.ADD, lockName,
+                            ((InetSocketAddress) channelToLeader.localAddress())
+                                    .getAddress().getHostAddress()), TIMEOUT));
         } catch (DraccException e) {
             acquireDistributedLock(lockName);
         }
@@ -401,13 +411,5 @@ public class JDracc implements DraccClient, AutoCloseable {
         return isClosed;
     }
 
-
-    /**
-     * 通过进程号和线程号生成唯一id
-     */
-    private long generHostUniqueNumByTid(long threadId) {
-        //Linux内核的进程PID是32768(32 位系统)和2的22次方(64位系统)所以可以这样操作
-        return JVM_PID << 23 + JVM_PID;
-    }
 
 }

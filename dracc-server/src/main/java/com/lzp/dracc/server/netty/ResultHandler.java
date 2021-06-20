@@ -17,6 +17,7 @@
 package com.lzp.dracc.server.netty;
 
 import com.lzp.dracc.common.constant.Const;
+import com.lzp.dracc.common.util.StringUtil;
 import com.lzp.dracc.server.raft.LogService;
 import com.lzp.dracc.server.raft.RaftNode;
 import com.lzp.dracc.server.util.Data;
@@ -37,7 +38,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
-        String[] message = new String(bytes, UTF_8).split(Const.COLON);
+        String[] message = StringUtil.stringSplit(new String(bytes, UTF_8), Const.COLON);
 
         if (Const.YES.equals(message[1])) {
             RaftNode.cidAndResultMap.get(message[0]).countDown();

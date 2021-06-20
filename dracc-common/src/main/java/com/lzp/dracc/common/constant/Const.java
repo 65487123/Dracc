@@ -25,12 +25,12 @@ import com.lzp.dracc.common.util.PropertyUtil;
  * @date: 2021/3/17 16:26
  */
 public class Const {
-    public static final String COMMA = ",";
-    public static final String COLON = ":";
+    public static final char COMMA = ',';
+    public static final char COLON = ':';
     public static final String COPY_LOG_REQ = "cp_req";
     public static final String COPY_LOG_REPLY = "cp_reply";
-    public static final String COMMAND_SEPARATOR = "~";
-    public static final String SPECIFICORDER_SEPARATOR = "`";
+    public static final char COMMAND_SEPARATOR = '~';
+    public static final char SPECIFICORDER_SEPARATOR = '`';
     public static final String CLU_PRO = "cluster.properties";
     public static final String PERSI_PRO = "persistence.properties";
     public static final String SNAPSHOT_BATCH_COUNT = "snapshot-batch-count";
@@ -42,8 +42,8 @@ public class Const {
     public static final String RPC_SYNC_TERM = "syncTerm";
     public static final String RPC_TOBESLAVE = "tobeslave";
     public static final String YES = "yes";
-    public static final String FALSE = "f";
-    public static final String TRUE = "t";
+    public static final char FALSE = 'f';
+    public static final char TRUE = 't';
     public static final String EXCEPTION = "E";
     public static final String CLUSTER_DOWN_MESSAGE = "cluster is down";
     public static final String ROOT_PATH;

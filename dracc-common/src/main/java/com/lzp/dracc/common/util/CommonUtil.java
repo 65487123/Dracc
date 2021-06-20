@@ -47,7 +47,7 @@ public class CommonUtil {
      * 字符串序列化成list,java客户端获取查询结果用
      */
     public static List<String> deserial(String elements) {
-        return new ArrayList<>(Arrays.asList(elements.split(Const.COMMAND_SEPARATOR)));
+        return Arrays.asList(elements.split("~"));
     }
 
 }
