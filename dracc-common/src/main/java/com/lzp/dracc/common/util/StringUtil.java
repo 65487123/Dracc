@@ -26,12 +26,12 @@ package com.lzp.dracc.common.util;
 public class StringUtil {
 
     /**
-     * 分割字符串,只支持五个元素以内
+     * 分割字符串,只支持六个元素以内
      */
 
     public static String[] stringSplit(String string, char c) {
-        String[] strings = new String[5];
-        for (int i = 0; i < 5; i++) {
+        String[] strings = new String[6];
+        for (int i = 0; i < 6; i++) {
             int k = string.indexOf(c);
             if (k < 0) {
                 strings[i] = string;
