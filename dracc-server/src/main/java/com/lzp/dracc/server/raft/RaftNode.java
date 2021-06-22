@@ -118,7 +118,7 @@ public class RaftNode {
     /**
      * 和客户端的连接,主节点才有元素
      */
-    public static final List<Channel> CHANNELS_WITH_CLIENT = new CopyOnWriteArrayList<>();
+    public static final Map<String,List<Channel>> IP_CHANNELS_WITH_CLIENT_MAP = new ConcurrentHashMap<>();
 
     /**
      * 任期以及和从节点的连接,主节点才有元素
@@ -348,14 +348,9 @@ public class RaftNode {
      * 查看实例对应的客户端是否存活
      */
     private static boolean isAlive(String instance) {
-        //由于这里对性能没什么要求,所以就不用hash算法了
-        for (Channel channel : CHANNELS_WITH_CLIENT) {
-            if (instance.equals(((InetSocketAddress) channel.remoteAddress())
-                    .getAddress().getHostAddress())) {
-                return true;
-            }
-        }
-        return false;
+        List<Channel> channels;
+        return (channels = IP_CHANNELS_WITH_CLIENT_MAP.get(instance)) != null
+                && !channels.isEmpty();
     }
 
 
@@ -402,9 +397,13 @@ public class RaftNode {
      * 关闭所有与客户端的连接,并从容器中清除
      */
     private static void clearChannelsWithClient() {
-        for (int i = CHANNELS_WITH_CLIENT.size() - 1; i >= 0; i--) {
-            CHANNELS_WITH_CLIENT.remove(i).close();
+        for (Map.Entry<String, List<Channel>> entry : IP_CHANNELS_WITH_CLIENT_MAP.entrySet()) {
+            List<Channel> channels = entry.getValue();
+            for (int i = channels.size() - 1; i >= 0; i--) {
+                channels.remove(i).close();
+            }
         }
+        IP_CHANNELS_WITH_CLIENT_MAP.clear();
     }
 
     /**
@@ -493,11 +492,12 @@ public class RaftNode {
                 if (role == Role.LEADER) {
                     BlockingQueue<String> queue;
                     String service;
-                    for (Channel channel : CHANNELS_WITH_CLIENT) {
-                        if ((queue = ALL_NOTIFICATION_TOBESENT.get(((InetSocketAddress) channel.remoteAddress())
-                                .getAddress().getHostAddress())) != null) {
-                            while ((service = queue.poll()) != null) {
-                                sentNotification(channel, service);
+                    for (Map.Entry<String, List<Channel>> entry : IP_CHANNELS_WITH_CLIENT_MAP.entrySet()) {
+                        if (!entry.getValue().isEmpty()) {
+                            if ((queue = ALL_NOTIFICATION_TOBESENT.get(entry.getKey())) != null) {
+                                while ((service = queue.poll()) != null) {
+                                    sentNotification(entry.getValue().get(0), service);
+                                }
                             }
                         }
                     }

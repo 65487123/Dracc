@@ -29,8 +29,6 @@ import com.lzp.dracc.server.util.ThreadPoolExecutor;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.GenericFutureListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -132,9 +130,16 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
 
     private void handleGetRole(ChannelHandlerContext channelHandlerContext) {
         if (RaftNode.getRole() == Role.LEADER) {
-            RaftNode.CHANNELS_WITH_CLIENT.add(channelHandlerContext.channel());
-            channelHandlerContext.channel().closeFuture().addListener(future ->
-                    RaftNode.CHANNELS_WITH_CLIENT.remove(channelHandlerContext.channel()));
+            Channel channel = channelHandlerContext.channel();
+            String remoteIp = ((InetSocketAddress) channel.remoteAddress())
+                    .getAddress().getHostAddress();
+            List<Channel> channels;
+            if ((channels = RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.get(remoteIp))==null){
+                channels = new CopyOnWriteArrayList<>();
+            }
+            channels.add(channel);
+            List<Channel> finalChannels = channels;
+            channel.closeFuture().addListener(future -> finalChannels.remove(channel));
         }
         channelHandlerContext.writeAndFlush(RaftNode.getRole().name().getBytes(UTF_8));
     }
@@ -498,11 +503,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private static void wakeUpWaiter(String waiter) {
         String[] ipAndCommandId = StringUtil.stringSplit(waiter, Const.COLON);
-        for (Channel channel : RaftNode.CHANNELS_WITH_CLIENT) {
-            if (ipAndCommandId[0].equals(((InetSocketAddress) channel.remoteAddress())
-                    .getAddress().getHostAddress())) {
-                channel.writeAndFlush((ipAndCommandId[1] + Const.COLON + Const.TRUE).getBytes(UTF_8));
-            }
+        for (Channel channel : RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.get(ipAndCommandId[0])) {
+            channel.writeAndFlush((ipAndCommandId[1] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         }
     }
 
