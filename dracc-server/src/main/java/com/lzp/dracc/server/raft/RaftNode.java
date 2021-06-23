@@ -106,6 +106,11 @@ public class RaftNode {
             , new LinkedBlockingQueue(), new ThreadFactoryImpl("send notice"));
 
     /**
+     * 用来延时删除锁的线程池
+     */
+    private static final ScheduledExecutorService THREAD_POOL_FOR_REL_LOCK = new ScheduledThreadPoolExecutor(1, new ThreadFactoryImpl("Release locks with a delay"));
+
+    /**
      * 超时选举任务
      */
     private static final DelayTask ELECTION_TASK;
@@ -289,7 +294,7 @@ public class RaftNode {
             } catch (InterruptedException e) {
                 break;
             }
-            performHealthCheck();
+            performServiceHealthCheck();
         }
     }
 
@@ -307,7 +312,7 @@ public class RaftNode {
     /**
      * 执行服务健康检查
      */
-    private static void performHealthCheck() {
+    private static void performServiceHealthCheck() {
         for (Map.Entry<String, Object> serviceAndInstances : data[0].entrySet()) {
             for (String instance : (Set<String>) serviceAndInstances.getValue()) {
                 if (!isAlive(instance)) {
@@ -333,6 +338,40 @@ public class RaftNode {
                 }
             }
         }
+    }
+
+    /**
+     * 执行锁健康检查
+     */
+    private static void performLockHealthCheck() {
+       /* List<String> list;
+        for (Map.Entry<String, Object> entry : data[3].entrySet()) {
+            if (list = entry.getValue()!=0)
+
+            for (String instance : (Set<String>) serviceAndInstances.getValue()) {
+                if (!isAlive(instance)) {
+                    *//*
+                    当检查出存活的客户端中没有这个服务实例时会进到这里,执行下面这段代码:把删除服务实例的任务
+                    丢进netty的io线程中执行(接收客户端业务请求的线程,单线程设计的)。
+                    这段代码(判断完到把任务加入到线程池)是不能被中断的,纯cpu计算执行速度非常快。
+                    如果刚进入到这里,客户端就已经重连上并且server端已经把客户端的连接加入到容器中
+                    然后返回给客户端连接成功消息,客户端收到消息后马上重新把服务注册了一遍。这也不会
+                    出现乱序。因为这个过程至少得经历一个RTT(Round-Trip Time)
+                    所以,没必要加锁
+                    *//*
+                    *//*
+                    当执行NioEventLoopGroup().execute(),netty底层最终会调用到NioEventLoop的
+                    execute(),把任务塞进他的任务队列中。NioEventLoop在select()前会判断一次队列中
+                    是否有任务,如果有任务会selectNow()然后先处理已就绪的io请求再执行这个任务。如果
+                    NioEventLoop已经在阻塞select()了,会唤醒他并执行任务(如果execute()的runnable
+                    实现了NonWakeupRunnable,则不会唤醒)
+                    *//*
+                    NettyServer.workerGroup.execute(() -> CoreHandler.handleServiceWrite(true,
+                            generCommandForDelService(serviceAndInstances.getKey(), instance),
+                            null));
+                }
+            }
+        }*/
     }
 
     /**

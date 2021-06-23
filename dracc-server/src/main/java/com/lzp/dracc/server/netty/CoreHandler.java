@@ -134,12 +134,18 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             String remoteIp = ((InetSocketAddress) channel.remoteAddress())
                     .getAddress().getHostAddress();
             List<Channel> channels;
-            if ((channels = RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.get(remoteIp))==null){
+            if ((channels = RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.get(remoteIp)) == null) {
                 channels = new CopyOnWriteArrayList<>();
+                RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.put(remoteIp, channels);
             }
             channels.add(channel);
             List<Channel> finalChannels = channels;
-            channel.closeFuture().addListener(future -> finalChannels.remove(channel));
+            channel.closeFuture().addListener(future -> {
+                finalChannels.remove(channel);
+                if (finalChannels.isEmpty()) {
+                    RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.remove(remoteIp);
+                }
+            });
         }
         channelHandlerContext.writeAndFlush(RaftNode.getRole().name().getBytes(UTF_8));
     }
@@ -410,6 +416,9 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             if ((services = (Set<String>) RaftNode.data[0].get(command[3])) != null) {
                 result = services.remove(command[4]);
             }
+            if (services.isEmpty()) {
+                RaftNode.data[0].remove(command[3]);
+            }
         } else {
             if ((services = (Set<String>) RaftNode.data[0].get(command[3])) == null) {
                 services = new HashSet<>();
@@ -469,6 +478,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         if ((locks = (List<String>) RaftNode.data[3].get(command[3])) == null) {
             locks = new LinkedList<>();
             locks.add(command[4] + Const.COLON + command[0]);
+            RaftNode.data[3].put(command[3], locks);
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         } else if (locks.size() == 0) {
             locks.add(command[4] + Const.COLON + command[0]);
