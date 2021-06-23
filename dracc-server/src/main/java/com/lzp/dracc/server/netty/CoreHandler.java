@@ -414,7 +414,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         boolean result = false;
         if (isRem) {
             if ((services = (Set<String>) RaftNode.data[0].get(command[3])) != null) {
-                result = services.remove(command[4]);
+                //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。下面原因相同
+                synchronized (services) {
+                    result = services.remove(command[4]);
+                }
             }
             if (services.isEmpty()) {
                 RaftNode.data[0].remove(command[3]);
@@ -424,13 +427,22 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 services = new HashSet<>();
                 RaftNode.data[0].put(command[3], services);
             }
-            result = services.add(command[4]);
+            synchronized (services) {
+                result = services.add(command[4]);
+            }
         }
         //channelHandlerContext有可能为null(健康检查时删除服务会传null)。用try-catch为了不影响正常情况性能
         try {
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + result).getBytes(UTF_8));
         } catch (NullPointerException ignored) {
         }
+        notifySlavesToCommitTheLog();
+    }
+
+    /**
+     * 通知从节点提交日志
+     */
+    private static void notifySlavesToCommitTheLog(){
         for (Channel channel : slaves) {
             channel.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + Const
                     .RPC_COMMIT + Const.COMMAND_SEPARATOR).getBytes(UTF_8));
@@ -447,10 +459,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else {
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + RaftNode.data[1].put(command[3], command[4])).getBytes(UTF_8));
         }
-        for (Channel channel : slaves) {
-            channel.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + Const
-                    .RPC_COMMIT + Const.COMMAND_SEPARATOR).getBytes(UTF_8));
-        }
+        notifySlavesToCommitTheLog();
     }
 
     /**
@@ -463,10 +472,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else {
             acquireLock(command, channelHandlerContext);
         }
-        for (Channel channel : slaves) {
-            channel.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + Const
-                    .RPC_COMMIT + Const.COMMAND_SEPARATOR).getBytes(UTF_8));
-        }
+        notifySlavesToCommitTheLog();
     }
 
     /**
@@ -477,11 +483,14 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         int index;
         if ((locks = (List<String>) RaftNode.data[3].get(command[3])) == null) {
             locks = new LinkedList<>();
-            locks.add(command[4] + Const.COLON + command[0]);
             RaftNode.data[3].put(command[3], locks);
+            locks.add(command[4] + Const.COLON + command[0]);
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         } else if (locks.size() == 0) {
-            locks.add(command[4] + Const.COLON + command[0]);
+            synchronized (locks) {
+                //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。
+                locks.add(command[4] + Const.COLON + command[0]);
+            }
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         } else if ((index = locks.indexOf(command[4])) == -1) {
             locks.add(command[4] + Const.COLON + command[0]);
@@ -498,7 +507,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         LinkedList<String> locks;
         //只有当前持有锁才有释放锁的权力
         if ((locks = (LinkedList<String>) RaftNode.data[3].get(command[3])) != null && command[4].equals(locks.getFirst())) {
-            locks.removeFirst();
+            //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。
+            synchronized (locks) {
+                locks.removeFirst();
+            }
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
             if (locks.size() > 0) {
                 wakeUpWaiter(locks.getFirst());
