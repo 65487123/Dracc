@@ -185,7 +185,7 @@ public class JDracc implements DraccClient, AutoCloseable {
     private String sentRpcAndGetResult(String commandId,Thread currentThread, String command, long timeout) {
         ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler
                 .ThreadResultAndTime(System.currentTimeMillis() + timeout, currentThread);
-        ResultHandler.reqIdThreadMap.put(currentThread.getName(), threadResultAndTime);
+        ResultHandler.reqIdThreadMap.put(commandId, threadResultAndTime);
         channelToLeader.writeAndFlush(command.getBytes(StandardCharsets.UTF_8));
         String result;
         while ((result = threadResultAndTime.getResult()) == null) {
@@ -364,6 +364,16 @@ public class JDracc implements DraccClient, AutoCloseable {
 
     @Override
     public void releaseDistributedlock(String lockName) throws DraccException {
+        Thread currentThread;
+        String threadName = (currentThread = Thread.currentThread()).getName();
+        try {
+            checkResult(sentRpcAndGetResult(JVM_PID + threadName, currentThread,
+                    generateCommand(threadName, Const.TWO, Command.REM, lockName,
+                            ((InetSocketAddress) channelToLeader.localAddress())
+                                    .getAddress().getHostAddress()), TIMEOUT));
+        } catch (DraccException e) {
+            acquireDistributedLock(lockName);
+        }
     }
 
 

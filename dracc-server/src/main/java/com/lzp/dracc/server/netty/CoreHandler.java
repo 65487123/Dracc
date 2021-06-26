@@ -24,6 +24,7 @@ import com.lzp.dracc.common.util.ThreadFactoryImpl;
 import com.lzp.dracc.server.raft.LogService;
 import com.lzp.dracc.server.raft.RaftNode;
 import com.lzp.dracc.server.raft.Role;
+import com.lzp.dracc.server.util.ConcurrentArrayList;
 import com.lzp.dracc.server.util.CountDownLatch;
 import com.lzp.dracc.server.util.ThreadPoolExecutor;
 import io.netty.channel.Channel;
@@ -135,7 +136,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                     .getAddress().getHostAddress();
             List<Channel> channels;
             if ((channels = RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.get(remoteIp)) == null) {
-                channels = new CopyOnWriteArrayList<>();
+                channels = new ConcurrentArrayList<>();
                 RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.put(remoteIp, channels);
             }
             channels.add(channel);
@@ -504,19 +505,23 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 释放分布式锁逻辑
      */
     private static void releaseLock(String[] command, ChannelHandlerContext channelHandlerContext) {
-        LinkedList<String> locks;
-        //只有当前持有锁才有释放锁的权力
-        if ((locks = (LinkedList<String>) RaftNode.data[3].get(command[3])) != null && command[4].equals(locks.getFirst())) {
-            //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。
-            synchronized (locks) {
-                locks.removeFirst();
+        try {
+            LinkedList<String> locks;
+            //只有当前持有锁才有释放锁的权力
+            if ((locks = (LinkedList<String>) RaftNode.data[3].get(command[3])) != null && command[4].equals(locks.getFirst())) {
+                //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。
+                synchronized (locks) {
+                    locks.removeFirst();
+                }
+                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
+                if (locks.size() > 0) {
+                    wakeUpWaiter(locks.getFirst());
+                }
+            } else {
+                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.FALSE).getBytes(UTF_8));
             }
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
-            if (locks.size() > 0) {
-                wakeUpWaiter(locks.getFirst());
-            }
-        } else {
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.FALSE).getBytes(UTF_8));
+        } catch (NullPointerException ignored) {
+            //健康检查出持有锁的客户端已经失连了一段时间,释放这把锁时channelHandlerContext会传null,用try catch是为了不影响正常情况性能
         }
     }
 

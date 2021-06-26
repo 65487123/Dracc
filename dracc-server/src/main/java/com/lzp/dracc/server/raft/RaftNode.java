@@ -347,16 +347,36 @@ public class RaftNode {
      * 执行锁健康检查
      */
     private static void performLockHealthCheck() {
-        List<String> list;
+        LinkedList<String> list;
         for (Map.Entry<String, Object> entry : data[3].entrySet()) {
-            if ((list = (List<String>) entry.getValue()) != null) {
+            if ((list = (LinkedList<String>) entry.getValue()) != null) {
                 synchronized (list) {
-                    if (!list.isEmpty() && !isAlive(list.get(0))) {
+                    String[] lockHolder;
+                    if (!list.isEmpty() && !isAlive((lockHolder = StringUtil.stringSplit(list
+                            .getFirst(), Const.COLON))[0])) {
                         //TODO 延时删除服务
+                        delayToReleaseLock(list, lockHolder, entry.getKey());
                     }
                 }
             }
         }
+    }
+
+    /**
+     * 延迟释放锁
+     */
+    private static void delayToReleaseLock(final LinkedList waiter, String[] lockHolder, String lockName) {
+        THREAD_POOL_FOR_REL_LOCK.schedule(() -> {
+            synchronized (waiter) {
+                if (!waiter.isEmpty() && lockHolder.equals(waiter
+                        .getFirst()) && !isAlive(lockHolder[0])) {
+                    //释放锁是幂等操作
+                    NettyServer.workerGroup.execute(() -> CoreHandler.handleLockWrite(true,
+                            new String[]{lockHolder[1], Const.RPC_FROMCLIENT, Const.TWO + Const.COMMAND_SEPARATOR
+                                    + Command.REM, lockName, lockHolder[0]}, null));
+                }
+            }
+        }, 40, TimeUnit.SECONDS);
     }
 
     /**
