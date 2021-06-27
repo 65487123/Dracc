@@ -352,24 +352,68 @@ public class LogService {
     private static void parseAndExecuteCommand(String command) {
         String[] commandDetails = StringUtil.stringSplit(command, Const.SPECIFICORDER_SEPARATOR);
         if (Const.ZERO.equals(commandDetails[1])) {
-            if (Command.ADD.equals(commandDetails[0])) {
-                Set<String> set;
-                if ((set = (Set<String>) RaftNode.data[0].get(commandDetails[2])) == null) {
-                    set = new HashSet<>();
-                    RaftNode.data[0].put(commandDetails[2], set);
-                }
-                set.add(commandDetails[3]);
-            } else {
-                ((Set<String>) RaftNode.data[0].get(commandDetails[2])).remove(commandDetails[3]);
-            }
+            executeCommandForService(commandDetails);
         } else if (Const.ONE.equals(commandDetails[2])) {
-            if (Command.UPDATE.equals(commandDetails[0])) {
-                RaftNode.data[1].put(commandDetails[2], commandDetails[3]);
-            } else {
-                RaftNode.data[1].remove(commandDetails[2]);
+            executeCommandForConfig(commandDetails);
+        } else {
+            executeCommandForLock(commandDetails);
+        }
+    }
+
+    /**
+     * 执行针对服务的命令
+     */
+    private static void executeCommandForService(String[] commandDetails) {
+        Set<String> services;
+        if (Command.ADD.equals(commandDetails[0])) {
+            if ((services = (Set<String>) RaftNode.data[0].get(commandDetails[2])) == null) {
+                services = new HashSet<>();
+                RaftNode.data[0].put(commandDetails[2], services);
+            }
+            services.add(commandDetails[3]);
+        } else {
+            if ((services = (Set<String>) RaftNode.data[0].get(commandDetails[2])) != null) {
+                services.remove(commandDetails[3]);
+            }
+            if (services.isEmpty()) {
+                RaftNode.data[0].remove(commandDetails[2]);
+            }
+        }
+    }
+
+    /**
+     * 执行针对配置的命令
+     */
+    private static void executeCommandForConfig(String[] commandDetails) {
+        if (Command.UPDATE.equals(commandDetails[0])) {
+            RaftNode.data[1].put(commandDetails[2], commandDetails[3]);
+        } else {
+            RaftNode.data[1].remove(commandDetails[2]);
+        }
+    }
+
+    /**
+     * 执行针对锁的命令
+     */
+    private static void executeCommandForLock(String[] commandDetails) {
+        if (Command.ADD.equals(commandDetails[0])) {
+            List<String> locks;
+            if ((locks = (List<String>) RaftNode.data[2].get(commandDetails[2])) == null) {
+                locks = new LinkedList<>();
+                RaftNode.data[2].put(commandDetails[2], locks);
+                locks.add(commandDetails[3]);
+            } else if (locks.size() == 0) {
+                locks.add(commandDetails[3]);
+            } else if (!locks.contains(commandDetails[3])) {
+                locks.add(commandDetails[3]);
             }
         } else {
-
+            LinkedList<String> locks;
+            //只有当前持有锁才有释放锁的权力
+            if ((locks = (LinkedList<String>) RaftNode.data[3].get(commandDetails[2])) != null &&
+                    commandDetails[3].equals(locks.getFirst())) {
+                locks.removeFirst();
+            }
         }
     }
 

@@ -336,6 +336,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     public static void handleLockWrite(boolean isRem, String[] command, ChannelHandlerContext channelHandlerContext) {
         CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
+        command[5] = command[5] + Const.COLON + command[0];
         setLatchAndSendLogToSlaves(command, countDownLatch);
         repilicationThreadPool.execute(() -> receiveResponseForLocAndMakeDecision(countDownLatch, command, channelHandlerContext, isRem));
     }
@@ -482,19 +483,19 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     private static void acquireLock(String[] command, ChannelHandlerContext channelHandlerContext) {
         List<String> locks;
         int index;
-        if ((locks = (List<String>) RaftNode.data[3].get(command[3])) == null) {
+        if ((locks = (List<String>) RaftNode.data[2].get(command[4])) == null) {
             locks = new LinkedList<>();
-            RaftNode.data[3].put(command[3], locks);
-            locks.add(command[4] + Const.COLON + command[0]);
+            RaftNode.data[2].put(command[4], locks);
+            locks.add(command[5]);
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         } else if (locks.size() == 0) {
             synchronized (locks) {
                 //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。
-                locks.add(command[4] + Const.COLON + command[0]);
+                locks.add(command[5]);
             }
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
-        } else if ((index = locks.indexOf(command[4])) == -1) {
-            locks.add(command[4] + Const.COLON + command[0]);
+        } else if ((index = locks.indexOf(command[5])) == -1) {
+            locks.add(command[5]);
         } else if (index == 0) {
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
         }
@@ -508,7 +509,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         try {
             LinkedList<String> locks;
             //只有当前持有锁才有释放锁的权力
-            if ((locks = (LinkedList<String>) RaftNode.data[3].get(command[3])) != null && command[4].equals(locks.getFirst())) {
+            if ((locks = (LinkedList<String>) RaftNode.data[2].get(command[3])) != null && command[4].equals(locks.getFirst())) {
                 //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。
                 synchronized (locks) {
                     locks.removeFirst();
