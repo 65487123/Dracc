@@ -162,7 +162,7 @@ public class RaftNode {
         String localNode = clusterProperties.getProperty("localRaftNode");
         LOGGER.info("server:'{}' is starting", localNode);
         term = Long.parseLong(LogService.getTerm());
-        String[] remoteNodeIps = StringUtil.stringSplit(clusterProperties.getProperty("peerRaftNodes"), Const.COMMA);
+        String[] remoteNodeIps = clusterProperties.getProperty("peerRaftNodes").split(",");
         setReconnectionExecutor(remoteNodeIps.length);
         HALF_COUNT = (short) (remoteNodeIps.length % 2 == 0 ? remoteNodeIps.length / 2 : remoteNodeIps.length / 2 + 1);
         String[] localIpAndPort = StringUtil.stringSplit(localNode, Const.COLON);
@@ -295,6 +295,7 @@ public class RaftNode {
                 break;
             }
             performServiceHealthCheck();
+            performLockHealthCheck();
         }
     }
 
@@ -348,13 +349,12 @@ public class RaftNode {
      */
     private static void performLockHealthCheck() {
         LinkedList<String> list;
-        for (Map.Entry<String, Object> entry : data[3].entrySet()) {
+        for (Map.Entry<String, Object> entry : data[2].entrySet()) {
             if ((list = (LinkedList<String>) entry.getValue()) != null) {
                 synchronized (list) {
                     String[] lockHolder;
                     if (!list.isEmpty() && !isAlive((lockHolder = StringUtil.stringSplit(list
                             .getFirst(), Const.COLON))[0])) {
-                        //TODO 延时删除服务
                         delayToReleaseLock(list, lockHolder, entry.getKey());
                     }
                 }
@@ -567,8 +567,8 @@ public class RaftNode {
      * 通知所有监听器
      */
     public static void notifyListeners(String serviceName) {
-        List<String> ips;
-        if ((ips = (List<String>) RaftNode.data[2].get(serviceName)) != null) {
+        Set<String> ips;
+        if ((ips = (Set<String>) RaftNode.data[1].get(serviceName)) != null) {
             for (String ip : ips) {
                 BlockingQueue<String> queue;
                 if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) != null) {

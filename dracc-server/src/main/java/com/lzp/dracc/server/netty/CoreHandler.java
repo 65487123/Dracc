@@ -456,10 +456,18 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private static void commitConfigLogAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext, boolean isRem) {
         LogService.commitFirstUncommittedLog();
+        Set<String> configs;
         if (isRem) {
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + RaftNode.data[1].remove(command[3])).getBytes(UTF_8));
+            if ((configs = (Set<String>) RaftNode.data[1].get(command[3])) != null) {
+                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + configs.remove(command[4])).getBytes(UTF_8));
+            }
+            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.FALSE).getBytes(UTF_8));
         } else {
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + RaftNode.data[1].put(command[3], command[4])).getBytes(UTF_8));
+            if ((configs = (Set<String>) RaftNode.data[1].get(command[3])) == null) {
+                configs = new HashSet<>();
+                RaftNode.data[1].put(command[3], configs);
+            }
+            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + configs.add(command[4])).getBytes(UTF_8));
         }
         notifySlavesToCommitTheLog();
     }

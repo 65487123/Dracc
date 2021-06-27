@@ -26,7 +26,6 @@ public class Command {
 
     public static final String GET = "get";
     public static final String ADD = "add";
-    public static final String UPDATE = "updt";
     public static final String REM = "rem";
 
 

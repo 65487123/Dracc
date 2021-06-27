@@ -91,14 +91,13 @@ public interface DraccClient {
 
 
     /**
-     * 更新一个配置,原先不存在会添加
+     * 添加一个配置,原先不存在会添加
      *
      * @param configName 配置名(唯一id)
      * @param configVal  配置的值
-     * @return 原有的配置
      * @throws DraccException exception
      */
-    String updateConfig(String configName, String configVal) throws DraccException;
+    void addConfig(String configName, String configVal) throws DraccException;
 
 
     /**
@@ -106,7 +105,6 @@ public interface DraccClient {
      *
      * @param configName 配置名(唯一id)
      * @param configVal  value of config
-     * @return 原有配置
      * @throws DraccException exception
      */
     String removeConfig(String configName, String configVal) throws DraccException;
@@ -119,7 +117,7 @@ public interface DraccClient {
      * @return A list of string(all configs)
      * @throws DraccException exception
      */
-    String getConfig(String configName) throws DraccException;
+    List<String> getConfig(String configName) throws DraccException;
 
 
     /**

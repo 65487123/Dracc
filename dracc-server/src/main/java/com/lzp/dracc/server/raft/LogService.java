@@ -328,21 +328,30 @@ public class LogService {
      * 恢复状态机
      */
     private static void restoreStateMachine() {
+        initDataOfRaftNode();
         try (BufferedInputStream bufferedOutputStream = new BufferedInputStream(new FileInputStream(Const.ROOT_PATH + "persistence/snapshot.snp"));
              BufferedReader committedEntryReader = new BufferedReader(new FileReader(Const.ROOT_PATH + "persistence/committedEntry.txt"))) {
             byte[] bytes = new byte[bufferedOutputStream.available()];
             bufferedOutputStream.read(bytes);
-            RaftNode.data = (Map<String, Object>[]) DataSearialUtil.deserialize(bytes).getObject();
+            if (bytes.length>0) {
+                RaftNode.data = (Map<String, Object>[]) DataSearialUtil.deserialize(bytes).getObject();
+            }
             String command;
             while ((command = committedEntryReader.readLine()) != null) {
                 parseAndExecuteCommand(command);
             }
         } catch (Exception e) {
-            RaftNode.data[0] = new HashMap<>();
-            RaftNode.data[1] = new ConcurrentHashMap<>();
-            RaftNode.data[2] = new ConcurrentHashMap<>();
             LOGGER.error("restore state machine error", e);
         }
+    }
+
+    /**
+     * 初始化状态机
+     */
+    private static void initDataOfRaftNode(){
+        RaftNode.data[0] = new HashMap<>();
+        RaftNode.data[1] = new ConcurrentHashMap<>();
+        RaftNode.data[2] = new ConcurrentHashMap<>();
     }
 
 
@@ -385,10 +394,17 @@ public class LogService {
      * 执行针对配置的命令
      */
     private static void executeCommandForConfig(String[] commandDetails) {
-        if (Command.UPDATE.equals(commandDetails[0])) {
-            RaftNode.data[1].put(commandDetails[2], commandDetails[3]);
+        Set<String> configs;
+        if (Command.ADD.equals(commandDetails[0])) {
+            if ((configs = (Set<String>) RaftNode.data[1].get(commandDetails[2])) == null) {
+                configs = new HashSet<>();
+                RaftNode.data[1].put(commandDetails[2], configs);
+            }
+            configs.add(commandDetails[3]);
         } else {
-            RaftNode.data[1].remove(commandDetails[2]);
+            if ((configs = (Set<String>) RaftNode.data[1].get(commandDetails[2])) != null) {
+                configs.remove(commandDetails[3]);
+            }
         }
     }
 
@@ -410,7 +426,7 @@ public class LogService {
         } else {
             LinkedList<String> locks;
             //只有当前持有锁才有释放锁的权力
-            if ((locks = (LinkedList<String>) RaftNode.data[3].get(commandDetails[2])) != null &&
+            if ((locks = (LinkedList<String>) RaftNode.data[2].get(commandDetails[2])) != null &&
                     commandDetails[3].equals(locks.getFirst())) {
                 locks.removeFirst();
             }

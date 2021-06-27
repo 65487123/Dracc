@@ -206,10 +206,6 @@ public class JDracc implements DraccClient, AutoCloseable {
                 + key + Const.COMMAND_SEPARATOR + value;
     }
 
-    private String generateRemConfigCmd(String commandId, String key) {
-        return commandId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
-                + Const.ONE + Const.COMMAND_SEPARATOR + Command.REM + Const.COMMAND_SEPARATOR + key;
-    }
 
 
     private String genCmdForGet(String commandId, String dataType, String key) {
@@ -319,11 +315,11 @@ public class JDracc implements DraccClient, AutoCloseable {
 
 
     @Override
-    public String updateConfig(String configName, String configVal) throws DraccException {
+    public void addConfig(String configName, String configVal) throws DraccException {
         Thread currentThread;
         String threadName = (currentThread = Thread.currentThread()).getName();
-        return checkResult(sentRpcAndGetResult(threadName, currentThread,
-                generateCommand(threadName, Const.ONE, Command.UPDATE, configName, configVal)));
+        checkResult(sentRpcAndGetResult(threadName, currentThread,
+                generateCommand(threadName, Const.ONE, Command.ADD, configName, configVal)));
     }
 
 
@@ -332,18 +328,22 @@ public class JDracc implements DraccClient, AutoCloseable {
         Thread currentThread;
         String threadName = (currentThread = Thread.currentThread()).getName();
         return checkResult(sentRpcAndGetResult(threadName, currentThread,
-                generateRemConfigCmd(threadName, configName)));
+                generateCommand(threadName, Const.ONE, Command.REM, configName, configName)));
     }
 
 
     @Override
-    public String getConfig(String configName) throws DraccException {
+    public List<String> getConfig(String configName) throws DraccException {
         Thread currentThread;
         String threadName = (currentThread = Thread.currentThread()).getName();
         String result = sentRpcAndGetResult(threadName, currentThread,
                 genCmdForGet(threadName, Const.ONE, configName));
-        checkResult(result);
-        return result;
+        try {
+            return CommonUtil.deserial(result);
+        } catch (Exception e) {
+            checkResult(result);
+            return null;
+        }
     }
 
 
