@@ -411,8 +411,10 @@ public class RaftNode {
         LOGGER.info("downgrade to slave node");
         long preTerm = RaftNode.updateTerm(term, newTerm);
         List<Channel> oldChannels = TERM_AND_SLAVECHANNELS.remove(Long.toString(preTerm));
-        for (Channel channel : oldChannels) {
-            channel.close();
+        if (oldChannels != null) {
+            for (Channel channel : oldChannels) {
+                channel.close();
+            }
         }
         role = Role.FOLLOWER;
         clearChannelsWithClient();

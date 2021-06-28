@@ -164,7 +164,7 @@ public class JDracc implements DraccClient, AutoCloseable {
         Thread thisThread = Thread.currentThread();
         ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler.ThreadResultAndTime(System.currentTimeMillis() + 5000, thisThread);
         ResultHandler.reqIdThreadMap.put(thisThread.getName(), threadResultAndTime);
-        channel.writeAndFlush(Const.RPC_GETROLE.getBytes(StandardCharsets.UTF_8));
+        channel.writeAndFlush((thisThread.getName() + Const.COMMAND_SEPARATOR + Const.RPC_GETROLE).getBytes(StandardCharsets.UTF_8));
         String result;
         while ((result = threadResultAndTime.getResult()) == null) {
             LockSupport.park();
@@ -182,7 +182,7 @@ public class JDracc implements DraccClient, AutoCloseable {
     }
 
 
-    private String sentRpcAndGetResult(String commandId,Thread currentThread, String command, long timeout) {
+    private String sentRpcAndGetResult(String commandId, Thread currentThread, String command, long timeout) {
         ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler
                 .ThreadResultAndTime(System.currentTimeMillis() + timeout, currentThread);
         ResultHandler.reqIdThreadMap.put(commandId, threadResultAndTime);
@@ -201,7 +201,7 @@ public class JDracc implements DraccClient, AutoCloseable {
 
 
     private String generateCommand(String commandId, String dataType, String operType, String key, String value) {
-        return commandId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
+        return commandId + Const.COMMAND_SEPARATOR + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
                 + dataType + Const.COMMAND_SEPARATOR + operType + Const.COMMAND_SEPARATOR
                 + key + Const.COMMAND_SEPARATOR + value;
     }
