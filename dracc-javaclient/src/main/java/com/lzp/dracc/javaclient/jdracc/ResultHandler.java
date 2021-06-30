@@ -110,7 +110,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
         String[] threadIdAndResult = StringUtil.stringSplit(new String(bytes, StandardCharsets.UTF_8), Const.COLON);
-        ThreadResultAndTime threadResultAndTime = reqIdThreadMap.remove(Long.parseLong(threadIdAndResult[0]));
+        ThreadResultAndTime threadResultAndTime = reqIdThreadMap.remove(threadIdAndResult[0]);
         if (threadResultAndTime != null) {
             threadResultAndTime.result = threadIdAndResult[1];
             LockSupport.unpark(threadResultAndTime.thread);

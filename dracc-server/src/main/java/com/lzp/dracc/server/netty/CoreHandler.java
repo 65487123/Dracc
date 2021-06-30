@@ -122,14 +122,14 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else if (Const.RPC_ASKFORVOTE.equals(command[1])) {
             voteIfAppropriate(channelHandlerContext, command);
         } else if (Const.RPC_GETROLE.equals(command[1])) {
-            handleGetRole(channelHandlerContext);
+            handleGetRole(command, channelHandlerContext);
         } else {
             //Const.COPY_LOG_REPLY.equals(command[1])
             syncLogAndStateMachine(command);
         }
     }
 
-    private void handleGetRole(ChannelHandlerContext channelHandlerContext) {
+    private void handleGetRole(String[] command,ChannelHandlerContext channelHandlerContext) {
         if (RaftNode.getRole() == Role.LEADER) {
             Channel channel = channelHandlerContext.channel();
             String remoteIp = ((InetSocketAddress) channel.remoteAddress())
@@ -148,7 +148,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 }
             });
         }
-        channelHandlerContext.writeAndFlush(RaftNode.getRole().name().getBytes(UTF_8));
+        channelHandlerContext.writeAndFlush((command[0] + Const.COLON + RaftNode.getRole().name()).getBytes(UTF_8));
     }
 
     /**
