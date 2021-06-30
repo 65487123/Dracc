@@ -237,8 +237,9 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             if (opposingTerm < RaftNode.term) {
                 channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
             } else if (opposingTerm > RaftNode.term) {
-                RaftNode.downgradeToSlaveNode(false, opposingTerm);
-                voteIfTheLogMatches(command[3], command[4], command[0], channelHandlerContext);
+                if (voteIfTheLogMatches(command[3], command[4], command[0], channelHandlerContext)) {
+                    RaftNode.downgradeToSlaveNode(false, opposingTerm);
+                }
             }
         }
     }
@@ -247,10 +248,12 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 对方日志不比自己旧就投他一票
      */
-    private void voteIfTheLogMatches(String oppoCommittedLogIndex, String oppoUnCommittedLogIndex, String reqId, ChannelHandlerContext channelHandlerContext) {
+    private boolean voteIfTheLogMatches(String oppoCommittedLogIndex, String oppoUnCommittedLogIndex, String reqId, ChannelHandlerContext channelHandlerContext) {
         if (logIsNotOlder(oppoCommittedLogIndex, oppoUnCommittedLogIndex)) {
             channelHandlerContext.writeAndFlush((reqId + Const.COLON + Const.YES).getBytes(UTF_8));
+            return true;
         }
+        return false;
     }
 
 
