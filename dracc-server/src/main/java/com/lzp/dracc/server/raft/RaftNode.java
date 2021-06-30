@@ -123,7 +123,7 @@ public class RaftNode {
     /**
      * 和客户端的连接,主节点才有元素
      */
-    public static final Map<String,List<Channel>> IP_CHANNELS_WITH_CLIENT_MAP = new ConcurrentHashMap<>();
+    public static final Map<String, List<Channel>> IP_CHANNELS_WITH_CLIENT_MAP = new ConcurrentHashMap<>();
 
     /**
      * 任期以及和从节点的连接,主节点才有元素
