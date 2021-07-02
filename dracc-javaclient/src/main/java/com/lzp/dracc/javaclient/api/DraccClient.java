@@ -27,7 +27,7 @@ import java.util.List;
  * @author: Zeping Lu
  * @date: 2021/4/30 17:53
  */
-public interface DraccClient {
+public interface DraccClient extends AutoCloseable{
 
     /**
      * 注册一个服务实例

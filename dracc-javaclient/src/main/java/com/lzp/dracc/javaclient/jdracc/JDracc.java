@@ -43,7 +43,7 @@ import java.util.concurrent.locks.LockSupport;
  * @author: Zeping Lu
  * @date: 2021/3/24 19:48
  */
-public class JDracc implements DraccClient, AutoCloseable {
+public class JDracc implements DraccClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(JDracc.class);
 
@@ -183,6 +183,7 @@ public class JDracc implements DraccClient, AutoCloseable {
 
 
     private String sentRpcAndGetResult(String commandId, Thread currentThread, String command, long timeout) {
+        System.out.println(command);
         ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler
                 .ThreadResultAndTime(System.currentTimeMillis() + timeout, currentThread);
         ResultHandler.reqIdThreadMap.put(commandId, threadResultAndTime);
@@ -209,7 +210,7 @@ public class JDracc implements DraccClient, AutoCloseable {
 
 
     private String genCmdForGet(String commandId, String dataType, String key) {
-        return commandId + Const.RPC_FROMCLIENT + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
+        return commandId + Const.COMMAND_SEPARATOR + Const.RPC_FROMCLIENT + Const.COMMAND_SEPARATOR
                 + dataType + Const.COMMAND_SEPARATOR + Command.GET + Const.COMMAND_SEPARATOR + key;
     }
 
@@ -328,7 +329,7 @@ public class JDracc implements DraccClient, AutoCloseable {
         Thread currentThread;
         String threadName = (currentThread = Thread.currentThread()).getName();
         return checkResult(sentRpcAndGetResult(threadName, currentThread,
-                generateCommand(threadName, Const.ONE, Command.REM, configName, configName)));
+                generateCommand(threadName, Const.ONE, Command.REM, configName, configVal)));
     }
 
 
@@ -338,12 +339,7 @@ public class JDracc implements DraccClient, AutoCloseable {
         String threadName = (currentThread = Thread.currentThread()).getName();
         String result = sentRpcAndGetResult(threadName, currentThread,
                 genCmdForGet(threadName, Const.ONE, configName));
-        try {
-            return CommonUtil.deserial(result);
-        } catch (Exception e) {
-            checkResult(result);
-            return null;
-        }
+        return CommonUtil.deserial(checkResult(result));
     }
 
 

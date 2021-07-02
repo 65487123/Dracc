@@ -114,6 +114,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
         if (threadResultAndTime != null) {
             threadResultAndTime.result = threadIdAndResult[1];
             LockSupport.unpark(threadResultAndTime.thread);
+            System.out.println(threadIdAndResult[1]);
         } else {
             try {
                 String[] nameAndInstances = StringUtil.stringSplit(threadIdAndResult[1], Const.COMMAND_SEPARATOR);

@@ -54,11 +54,10 @@ public class RaftNode {
 
         Runnable runnable;
         volatile long deadline;
-        volatile long delay;
 
         DelayTask(Runnable runnable, long delay) {
             this.runnable = runnable;
-            this.deadline = System.currentTimeMillis() + (this.delay = delay);
+            this.deadline = System.currentTimeMillis() + delay;
         }
 
         @Override
@@ -168,11 +167,10 @@ public class RaftNode {
         String[] localIpAndPort = StringUtil.stringSplit(localNode, Const.COLON);
         NettyServer.start(localIpAndPort[0], Integer.parseInt(localIpAndPort[1]));
         setThreadPoolForPerformElectTasks();
-        ELECTION_TASK = new DelayTask(() -> {
+        timeoutToElectionExecutor.execute(ELECTION_TASK = new DelayTask(() -> {
             LOGGER.info("heartbeat timed out, initiate an election");
             startElection(remoteNodeIps);
-        }, ThreadLocalRandom.current().nextInt(12500, 18500));
-        timeoutToElectionExecutor.execute(ELECTION_TASK);
+        }, ThreadLocalRandom.current().nextInt(9500, 28500)));
         startThreadForNoti();
     }
 
@@ -205,6 +203,7 @@ public class RaftNode {
     private static void startElection(String[] remoteNodeIps) {
         role = Role.CANDIDATE;
         updateTermAndSlaveChannels();
+        System.out.println("new term is" + term);
         String voteRequestId = Long.toString(term);
         CountDownLatch countDownLatch = new CountDownLatch(HALF_COUNT);
         cidAndResultMap.put(voteRequestId, countDownLatch);
@@ -407,7 +406,7 @@ public class RaftNode {
      *
      * @param newTerm 新任期
      */
-    public static void downgradeToSlaveNode(boolean needClearUncommitLog, long newTerm) {
+    public synchronized static void downgradeToSlaveNode(boolean needClearUncommitLog, long newTerm) {
         LOGGER.info("downgrade to slave node");
         long preTerm = RaftNode.updateTerm(term, newTerm);
         List<Channel> oldChannels = TERM_AND_SLAVECHANNELS.remove(Long.toString(preTerm));
@@ -502,7 +501,8 @@ public class RaftNode {
      * 重置计时器
      */
     public static void resetTimer() {
-        ELECTION_TASK.deadline = System.currentTimeMillis() + ELECTION_TASK.delay;
+        ELECTION_TASK.deadline = System.currentTimeMillis() + ThreadLocalRandom.current()
+                .nextInt(9500, 28500);
     }
 
 

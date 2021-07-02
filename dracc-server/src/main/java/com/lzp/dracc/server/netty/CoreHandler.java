@@ -26,6 +26,7 @@ import com.lzp.dracc.server.raft.RaftNode;
 import com.lzp.dracc.server.raft.Role;
 import com.lzp.dracc.server.util.ConcurrentArrayList;
 import com.lzp.dracc.server.util.CountDownLatch;
+import com.lzp.dracc.server.util.DataSearialUtil;
 import com.lzp.dracc.server.util.ThreadPoolExecutor;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -34,6 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -221,7 +223,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 RaftNode.updateTerm(RaftNode.term, opposingTerm);
                 RaftNode.resetTimer();
                 channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.YES).getBytes(UTF_8));
-            } else if (opposingTerm < RaftNode.term) {
+            } else if (opposingTerm != RaftNode.term) {
                 channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
             }
         } else if (Role.LEADER == RaftNode.getRole()) {
@@ -279,15 +281,18 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             if (Const.ZERO.equals(command[2])) {
                 //service
                 if (Command.GET.equals(command[3])) {
-                    channelHandlerContext.writeAndFlush((command[0] + Const.COLON + CommonUtil
-                            .serial((Set<String>) RaftNode.data[0].get(command[4]))).getBytes(UTF_8));
+                    String result;
+                    channelHandlerContext.writeAndFlush((command[0] + Const.COLON + (result = CommonUtil
+                            .serial((Set<String>) RaftNode.data[0].get(command[4])))).getBytes(UTF_8));
+                    System.out.println(result);
                 } else {
                     handleServiceWrite(isRem, command, channelHandlerContext);
                 }
             } else if (Const.ONE.equals(command[2])) {
                 //config
                 if (Command.GET.equals(command[3])) {
-                    channelHandlerContext.writeAndFlush((command[0] + Const.COLON + (RaftNode.data[1].get(command[4]))).getBytes(UTF_8));
+                    channelHandlerContext.writeAndFlush((command[0] + Const.COLON + CommonUtil
+                            .serial((Set<String>) RaftNode.data[1].get(command[4]))).getBytes(UTF_8));
                 } else {
                     handleConfigWrite(isRem, command, channelHandlerContext);
                 }
@@ -318,9 +323,9 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 .SPECIFICORDER_SEPARATOR + command[4] + Const.SPECIFICORDER_SEPARATOR + command[5];
         long unCommittedLogNum = LogService.appendUnCommittedLog(specificOrder);
         for (Channel channel : slaves) {
-            channel.writeAndFlush(command[0] + Const.COMMAND_SEPARATOR + Const.RPC_REPLICATION + Const
-                    .COMMAND_SEPARATOR + specificOrder + Const.COMMAND_SEPARATOR + LogService
-                    .getCommittedLogIndex() + Const.COMMAND_SEPARATOR + unCommittedLogNum);
+            channel.writeAndFlush((command[0] + Const.COMMAND_SEPARATOR + Const.RPC_REPLICATION + Const
+                    .COMMAND_SEPARATOR + specificOrder + Const.COMMAND_SEPARATOR + LogService.getCommittedLogIndex()
+                    + Const.COMMAND_SEPARATOR + unCommittedLogNum).getBytes(StandardCharsets.UTF_8));
         }
     }
 
@@ -461,16 +466,16 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         LogService.commitFirstUncommittedLog();
         Set<String> configs;
         if (isRem) {
-            if ((configs = (Set<String>) RaftNode.data[1].get(command[3])) != null) {
-                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + configs.remove(command[4])).getBytes(UTF_8));
+            if ((configs = (Set<String>) RaftNode.data[1].get(command[4])) != null) {
+                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + configs.remove(command[5])).getBytes(UTF_8));
             }
             channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.FALSE).getBytes(UTF_8));
         } else {
-            if ((configs = (Set<String>) RaftNode.data[1].get(command[3])) == null) {
+            if ((configs = (Set<String>) RaftNode.data[1].get(command[4])) == null) {
                 configs = new HashSet<>();
-                RaftNode.data[1].put(command[3], configs);
+                RaftNode.data[1].put(command[4], configs);
             }
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + configs.add(command[4])).getBytes(UTF_8));
+            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + configs.add(command[5])).getBytes(UTF_8));
         }
         notifySlavesToCommitTheLog();
     }
