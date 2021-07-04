@@ -183,7 +183,6 @@ public class JDracc implements DraccClient {
 
 
     private String sentRpcAndGetResult(String commandId, Thread currentThread, String command, long timeout) {
-        System.out.println(command);
         ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler
                 .ThreadResultAndTime(System.currentTimeMillis() + timeout, currentThread);
         ResultHandler.reqIdThreadMap.put(commandId, threadResultAndTime);

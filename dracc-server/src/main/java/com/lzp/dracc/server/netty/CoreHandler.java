@@ -223,14 +223,14 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 RaftNode.updateTerm(RaftNode.term, opposingTerm);
                 RaftNode.resetTimer();
                 channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.YES).getBytes(UTF_8));
-            } else if (opposingTerm != RaftNode.term) {
+            } else if (opposingTerm < RaftNode.term) {
                 channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
             }
         } else if (Role.LEADER == RaftNode.getRole()) {
             if (opposingTerm > RaftNode.term) {
                 //1、网络分区恢复后 2、对方和本节点同时发起选举,但是对方竞选失败发起下一轮选举
                 RaftNode.downgradeToSlaveNode(false, opposingTerm);
-                voteIfTheLogMatches(command[3], command[4], command[0], channelHandlerContext);
+                voteIfTheLogMatches(command[3], command[4], command[0], channelHandlerContext, false);
             } else {
                 //比对方先取得半数票,已经竞选成功
                 channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
@@ -239,19 +239,24 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             if (opposingTerm < RaftNode.term) {
                 channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
             } else if (opposingTerm > RaftNode.term) {
-                if (voteIfTheLogMatches(command[3], command[4], command[0], channelHandlerContext)) {
+                if (voteIfTheLogMatches(command[3], command[4], command[0], channelHandlerContext, false)) {
                     RaftNode.downgradeToSlaveNode(false, opposingTerm);
                 }
+            } else if (voteIfTheLogMatches(command[3], command[4], command[0], channelHandlerContext, true)) {
+                RaftNode.downgradeToSlaveNode(false, opposingTerm);
             }
         }
     }
 
 
     /**
-     * 对方日志不比自己旧就投他一票
+     * 对方日志比自己新或者和自己一样就投他一票
+     * @param needNewer 是否需要比自己新
      */
-    private boolean voteIfTheLogMatches(String oppoCommittedLogIndex, String oppoUnCommittedLogIndex, String reqId, ChannelHandlerContext channelHandlerContext) {
-        if (logIsNotOlder(oppoCommittedLogIndex, oppoUnCommittedLogIndex)) {
+    private boolean voteIfTheLogMatches(String oppoCommittedLogIndex, String oppoUnCommittedLogIndex, String reqId,
+                                        ChannelHandlerContext channelHandlerContext, boolean needNewer) {
+        if (needNewer ? logIsNewer(oppoCommittedLogIndex, oppoUnCommittedLogIndex) :
+                logIsNotOlder(oppoCommittedLogIndex, oppoUnCommittedLogIndex)) {
             channelHandlerContext.writeAndFlush((reqId + Const.COLON + Const.YES).getBytes(UTF_8));
             return true;
         }
@@ -260,11 +265,19 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
 
 
     /**
-     * 判断日志是否比本节点日志旧
+     * 判断日志是否不比本节点日志旧
      */
     private boolean logIsNotOlder(String commiteedLogIndex, String uncommiteedLogIndex) {
         return Long.parseLong(commiteedLogIndex) >= LogService.getCommittedLogIndex()
                 && Long.parseLong(uncommiteedLogIndex) >= LogService.getUncommittedLogSize();
+    }
+
+    /**
+     * 判断日志是否比自己新
+     */
+    private boolean logIsNewer(String commiteedLogIndex, String uncommiteedLogIndex) {
+        return Long.parseLong(commiteedLogIndex) > LogService.getCommittedLogIndex()
+                && Long.parseLong(uncommiteedLogIndex) > LogService.getUncommittedLogSize();
     }
 
     /**
@@ -284,7 +297,6 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                     String result;
                     channelHandlerContext.writeAndFlush((command[0] + Const.COLON + (result = CommonUtil
                             .serial((Set<String>) RaftNode.data[0].get(command[4])))).getBytes(UTF_8));
-                    System.out.println(result);
                 } else {
                     handleServiceWrite(isRem, command, channelHandlerContext);
                 }
@@ -468,8 +480,9 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         if (isRem) {
             if ((configs = (Set<String>) RaftNode.data[1].get(command[4])) != null) {
                 channelHandlerContext.writeAndFlush((command[0] + Const.COLON + configs.remove(command[5])).getBytes(UTF_8));
+            } else {
+                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.FALSE).getBytes(UTF_8));
             }
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.FALSE).getBytes(UTF_8));
         } else {
             if ((configs = (Set<String>) RaftNode.data[1].get(command[4])) == null) {
                 configs = new HashSet<>();

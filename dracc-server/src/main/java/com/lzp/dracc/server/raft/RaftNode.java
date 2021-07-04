@@ -203,7 +203,6 @@ public class RaftNode {
     private static void startElection(String[] remoteNodeIps) {
         role = Role.CANDIDATE;
         updateTermAndSlaveChannels();
-        System.out.println("new term is" + term);
         String voteRequestId = Long.toString(term);
         CountDownLatch countDownLatch = new CountDownLatch(HALF_COUNT);
         cidAndResultMap.put(voteRequestId, countDownLatch);
@@ -214,7 +213,7 @@ public class RaftNode {
             threadPoolExecutor.execute(() -> sendRpcAndSaveChannel(term, voteRequestId, ipAndPort[0], ipAndPort[1]));
         }
         try {
-            if (countDownLatch.await(ThreadLocalRandom.current().nextLong(3500, 5000), TimeUnit.MILLISECONDS)) {
+            if (countDownLatch.await(ThreadLocalRandom.current().nextLong(3500, 10500), TimeUnit.MILLISECONDS)) {
                 upgradToLeader(Long.toString(term));
             } else {
                 LOGGER.info("The election timed out, re-launch");
