@@ -213,7 +213,7 @@ public class RaftNode {
             threadPoolExecutor.execute(() -> sendRpcAndSaveChannel(term, voteRequestId, ipAndPort[0], ipAndPort[1]));
         }
         try {
-            if (countDownLatch.await(ThreadLocalRandom.current().nextLong(3500, 10500), TimeUnit.MILLISECONDS)) {
+            if (countDownLatch.await(ThreadLocalRandom.current().nextLong(7000, 21000), TimeUnit.MILLISECONDS)) {
                 upgradToLeader(Long.toString(term));
             } else {
                 LOGGER.info("The election timed out, re-launch");
