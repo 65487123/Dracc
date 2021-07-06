@@ -26,7 +26,6 @@ import com.lzp.dracc.server.raft.RaftNode;
 import com.lzp.dracc.server.raft.Role;
 import com.lzp.dracc.server.util.ConcurrentArrayList;
 import com.lzp.dracc.server.util.CountDownLatch;
-import com.lzp.dracc.server.util.DataSearialUtil;
 import com.lzp.dracc.server.util.ThreadPoolExecutor;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -150,7 +149,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 }
             });
         }
-        channelHandlerContext.writeAndFlush((command[0] + Const.COLON + RaftNode.getRole().name()).getBytes(UTF_8));
+        channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + RaftNode.getRole().name()).getBytes(UTF_8));
     }
 
     /**
@@ -193,7 +192,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private void appendUncommittedLogAndReturnYes(String[] command, ChannelHandlerContext channelHandlerContext) {
         LogService.appendUnCommittedLog(command[2]);
-        channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.YES).getBytes(UTF_8));
+        channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.YES).getBytes(UTF_8));
     }
 
     /**
@@ -201,7 +200,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private synchronized void waitUntilSyncThenReturnYes(String[] command, ChannelHandlerContext channelHandlerContext) {
         if (!logMustBeConsistent) {
-            channelHandlerContext.writeAndFlush((Const.COPY_LOG_REQ + Const.COLON + LogService
+            channelHandlerContext.writeAndFlush((Const.COPY_LOG_REQ + Const.COMMA + LogService
                     .getCommittedLogIndex()).getBytes(UTF_8));
             while (!logMustBeConsistent) {
                 try {
@@ -210,7 +209,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 }
             }
         }
-        channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.YES).getBytes(UTF_8));
+        channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.YES).getBytes(UTF_8));
     }
 
     /**
@@ -219,45 +218,41 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     private void voteIfAppropriate(ChannelHandlerContext channelHandlerContext, String[] command) {
         long opposingTerm = Long.parseLong(command[2]);
         if (Role.FOLLOWER == RaftNode.getRole()) {
-            if (opposingTerm > RaftNode.term && logIsNotOlder(command[3], command[4])) {
+            if (opposingTerm >= RaftNode.term) {
                 RaftNode.updateTerm(RaftNode.term, opposingTerm);
-                RaftNode.resetTimer();
-                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.YES).getBytes(UTF_8));
-            } else if (opposingTerm < RaftNode.term) {
-                channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
+                if (voteIfNotVotedAndTheLogMatches(command[3], command[4], command[0], channelHandlerContext)) {
+                    RaftNode.resetTimer();
+                }
             }
         } else if (Role.LEADER == RaftNode.getRole()) {
             if (opposingTerm > RaftNode.term) {
                 //1、网络分区恢复后 2、对方和本节点同时发起选举,但是对方竞选失败发起下一轮选举
                 RaftNode.downgradeToSlaveNode(false, opposingTerm);
-                voteIfTheLogMatches(command[3], command[4], command[0], channelHandlerContext, false);
+                voteIfNotVotedAndTheLogMatches(command[3], command[4], command[0], channelHandlerContext);
             } else {
-                //比对方先取得半数票,已经竞选成功
-                channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
+                //比对方先取得半数票,已经竞选成功或者网络分区后本节点在多数派
+                channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COMMA + LogService.getTerm()).getBytes(UTF_8));
             }
         } else {
-            if (opposingTerm < RaftNode.term) {
-                channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
-            } else if (opposingTerm > RaftNode.term) {
-                if (voteIfTheLogMatches(command[3], command[4], command[0], channelHandlerContext, false)) {
+            if (opposingTerm > RaftNode.term) {
+                RaftNode.downgradeToSlaveNode(false, opposingTerm);
+                if (voteIfNotVotedAndTheLogMatches(command[3], command[4], command[0], channelHandlerContext)) {
                     RaftNode.downgradeToSlaveNode(false, opposingTerm);
                 }
-            } else if (voteIfTheLogMatches(command[3], command[4], command[0], channelHandlerContext, true)) {
-                RaftNode.downgradeToSlaveNode(false, opposingTerm);
             }
         }
     }
 
 
     /**
-     * 对方日志比自己新或者和自己一样就投他一票
-     * @param needNewer 是否需要比自己新
+     * 对方日志不比自己旧就投他一票
      */
-    private boolean voteIfTheLogMatches(String oppoCommittedLogIndex, String oppoUnCommittedLogIndex, String reqId,
-                                        ChannelHandlerContext channelHandlerContext, boolean needNewer) {
-        if (needNewer ? logIsNewer(oppoCommittedLogIndex, oppoUnCommittedLogIndex) :
-                logIsNotOlder(oppoCommittedLogIndex, oppoUnCommittedLogIndex)) {
-            channelHandlerContext.writeAndFlush((reqId + Const.COLON + Const.YES).getBytes(UTF_8));
+    private boolean voteIfNotVotedAndTheLogMatches(String oppoCommittedLogIndex, String oppoUnCommittedLogIndex,
+                                                   String reqId, ChannelHandlerContext channelHandlerContext) {
+
+        if (RaftNode.notVoted && logIsNotOlder(oppoCommittedLogIndex, oppoUnCommittedLogIndex)) {
+            channelHandlerContext.writeAndFlush((reqId + Const.COMMA + Const.YES).getBytes(UTF_8));
+            RaftNode.notVoted = false;
             return true;
         }
         return false;
@@ -287,23 +282,22 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     private void handleClientReq(String[] command, ChannelHandlerContext channelHandlerContext) {
         //当少于半数节点存活,整个集群是不可用的,直接返回异常
         if (RaftNode.TERM_AND_SLAVECHANNELS.get(String.valueOf(RaftNode.term)).size() < RaftNode.HALF_COUNT) {
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.EXCEPTION + Const
+            channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.EXCEPTION + Const
                     .CLUSTER_DOWN_MESSAGE).getBytes(UTF_8));
         } else {
             boolean isRem = Command.REM.equals(command[3]);
             if (Const.ZERO.equals(command[2])) {
                 //service
                 if (Command.GET.equals(command[3])) {
-                    String result;
-                    channelHandlerContext.writeAndFlush((command[0] + Const.COLON + (result = CommonUtil
-                            .serial((Set<String>) RaftNode.data[0].get(command[4])))).getBytes(UTF_8));
+                    channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + CommonUtil
+                            .serial((Set<String>) RaftNode.data[0].get(command[4]))).getBytes(UTF_8));
                 } else {
                     handleServiceWrite(isRem, command, channelHandlerContext);
                 }
             } else if (Const.ONE.equals(command[2])) {
                 //config
                 if (Command.GET.equals(command[3])) {
-                    channelHandlerContext.writeAndFlush((command[0] + Const.COLON + CommonUtil
+                    channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + CommonUtil
                             .serial((Set<String>) RaftNode.data[1].get(command[4]))).getBytes(UTF_8));
                 } else {
                     handleConfigWrite(isRem, command, channelHandlerContext);
@@ -374,12 +368,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             LOGGER.error("interrupted when waitting for response from slaves", e);
         }
         if (halfAgree) {
-            NettyServer.workerGroup.execute(() -> {
-                commitServiceLogAndReturnResult(command, channelHandlerContext, isRem);
-                if (Const.ZERO.equals(command[2])) {
-                    RaftNode.notifyListeners(command[4]);
-                }
-            });
+            NettyServer.workerGroup.execute(() -> commitServiceLogAndReturnResult(command, channelHandlerContext, isRem));
         } else {
             //发送日志复制消息前有半数存活,发送日志复制消息时,却有连接断开了,或者是等待从节点响应过程中线程被中断了,
             // 防止数据不一致,重新选主
@@ -433,32 +422,34 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     private static void commitServiceLogAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext, boolean isRem) {
         LogService.commitFirstUncommittedLog();
         Set<String> services;
-        boolean result = false;
+        boolean operSucceed = false;
         if (isRem) {
-            if ((services = (Set<String>) RaftNode.data[0].get(command[3])) != null) {
+            if ((services = (Set<String>) RaftNode.data[0].get(command[4])) != null) {
                 //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。下面原因相同
                 synchronized (services) {
-                    result = services.remove(command[4]);
+                    operSucceed = services.remove(command[5]);
+                }
+                if (services.isEmpty()) {
+                    RaftNode.data[0].remove(command[4]);
                 }
             }
-            if (services.isEmpty()) {
-                RaftNode.data[0].remove(command[3]);
-            }
         } else {
-            if ((services = (Set<String>) RaftNode.data[0].get(command[3])) == null) {
+            if ((services = (Set<String>) RaftNode.data[0].get(command[4])) == null) {
                 services = new HashSet<>();
-                RaftNode.data[0].put(command[3], services);
+                RaftNode.data[0].put(command[4], services);
             }
             synchronized (services) {
-                result = services.add(command[4]);
+                operSucceed = services.add(command[5]);
             }
         }
-        //channelHandlerContext有可能为null(健康检查时删除服务会传null)。用try-catch为了不影响正常情况性能
-        try {
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + result).getBytes(UTF_8));
-        } catch (NullPointerException ignored) {
+        //channelHandlerContext有可能为null(健康检查时删除服务会传null)。
+        if (channelHandlerContext != null) {
+            channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + operSucceed).getBytes(UTF_8));
         }
         notifySlavesToCommitTheLog();
+        if (operSucceed) {
+            RaftNode.notifyListeners(command[4]);
+        }
     }
 
     /**
@@ -479,16 +470,16 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         Set<String> configs;
         if (isRem) {
             if ((configs = (Set<String>) RaftNode.data[1].get(command[4])) != null) {
-                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + configs.remove(command[5])).getBytes(UTF_8));
+                channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + configs.remove(command[5])).getBytes(UTF_8));
             } else {
-                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.FALSE).getBytes(UTF_8));
+                channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.FALSE).getBytes(UTF_8));
             }
         } else {
             if ((configs = (Set<String>) RaftNode.data[1].get(command[4])) == null) {
                 configs = new HashSet<>();
                 RaftNode.data[1].put(command[4], configs);
             }
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + configs.add(command[5])).getBytes(UTF_8));
+            channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + configs.add(command[5])).getBytes(UTF_8));
         }
         notifySlavesToCommitTheLog();
     }
@@ -516,17 +507,17 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             locks = new LinkedList<>();
             RaftNode.data[2].put(command[4], locks);
             locks.add(command[5]);
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
+            channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         } else if (locks.size() == 0) {
             synchronized (locks) {
                 //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。
                 locks.add(command[5]);
             }
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
+            channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         } else if ((index = locks.indexOf(command[5])) == -1) {
             locks.add(command[5]);
         } else if (index == 0) {
-            channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
+            channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         }
     }
 
@@ -543,12 +534,12 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 synchronized (locks) {
                     locks.removeFirst();
                 }
-                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.TRUE).getBytes(UTF_8));
+                channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
                 if (locks.size() > 0) {
                     wakeUpWaiter(locks.getFirst());
                 }
             } else {
-                channelHandlerContext.writeAndFlush((command[0] + Const.COLON + Const.FALSE).getBytes(UTF_8));
+                channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.FALSE).getBytes(UTF_8));
             }
         } catch (NullPointerException ignored) {
             //健康检查出持有锁的客户端已经失连了一段时间,释放这把锁时channelHandlerContext会传null,用try catch是为了不影响正常情况性能
@@ -561,7 +552,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     private static void wakeUpWaiter(String waiter) {
         String[] ipAndCommandId = StringUtil.stringSplit(waiter, Const.COLON);
         for (Channel channel : RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.get(ipAndCommandId[0])) {
-            channel.writeAndFlush((ipAndCommandId[1] + Const.COLON + Const.TRUE).getBytes(UTF_8));
+            channel.writeAndFlush((ipAndCommandId[1] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         }
     }
 
@@ -571,7 +562,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private void handleSyncTermReq(long opposingTerm, ChannelHandlerContext channelHandlerContext) {
         if (opposingTerm < RaftNode.term) {
-            channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COLON + LogService.getTerm()).getBytes(UTF_8));
+            channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COMMA + LogService.getTerm()).getBytes(UTF_8));
         } else {
             //失连恢复后,数据(未提交数据)可能不一致
             logMustBeConsistent = false;

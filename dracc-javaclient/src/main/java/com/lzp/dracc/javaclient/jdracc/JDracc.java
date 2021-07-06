@@ -230,31 +230,33 @@ public class JDracc implements DraccClient {
 
 
     @Override
-    public void registerInstance(String serviceName, String ip, int port) throws DraccException {
-        registerInstance0(serviceName, ip + Const.COLON + port);
+    public boolean registerInstance(String serviceName, String ip, int port) throws DraccException {
+        return registerInstance0(serviceName, ip + Const.COLON + port);
     }
 
 
-    private void registerInstance0(String serviceName, String instance) throws DraccException {
+    private boolean registerInstance0(String serviceName, String instance) throws DraccException {
         Thread currentThread;
         String threadName = (currentThread = Thread.currentThread()).getName();
-        checkResult(sentRpcAndGetResult(threadName, currentThread, generateCommand(threadName,
-                Const.ZERO, Command.ADD, serviceName, instance)));
+        boolean result = Const.F_TRUE.equals(checkResult(sentRpcAndGetResult(threadName, currentThread,
+                generateCommand(threadName, Const.ZERO, Command.ADD, serviceName, instance))));
         addInstanceLocally(serviceName, instance);
+        return result;
     }
 
 
     @Override
-    public void deregisterInstance(String serviceName, String ip, int port) throws DraccException {
-        deregisterInstance0(serviceName, ip + Const.COLON + port);
+    public boolean deregisterInstance(String serviceName, String ip, int port) throws DraccException {
+        return deregisterInstance0(serviceName, ip + Const.COLON + port);
     }
 
-    public void deregisterInstance0(String serviceName, String instance) throws DraccException {
+    public boolean deregisterInstance0(String serviceName, String instance) throws DraccException {
         Thread currentThread;
         String threadName = (currentThread = Thread.currentThread()).getName();
-        checkResult(sentRpcAndGetResult(threadName, currentThread, generateCommand(threadName,
-                Const.ZERO, Command.REM, serviceName, instance)));
+        boolean result = Const.F_TRUE.equals(checkResult(sentRpcAndGetResult(threadName, currentThread,
+                generateCommand(threadName, Const.ZERO, Command.REM, serviceName, instance))));
         remInstanceLocally(serviceName, instance);
+        return result;
     }
 
     @Override

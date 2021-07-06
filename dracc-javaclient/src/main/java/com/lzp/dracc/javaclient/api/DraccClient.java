@@ -39,9 +39,10 @@ public interface DraccClient extends AutoCloseable{
      * @param serviceName name of service
      * @param ip          instance ip
      * @param port        instance port
+     * @return 操作是否改变了状态机
      * @throws DraccException exception
      */
-    void registerInstance(String serviceName, String ip, int port) throws DraccException;
+    boolean registerInstance(String serviceName, String ip, int port) throws DraccException;
 
 
     /**
@@ -51,9 +52,10 @@ public interface DraccClient extends AutoCloseable{
      * @param serviceName 服务名 (唯一id)
      * @param ip          实例ip
      * @param port        实例端口
+     * @return 操作是否改变了状态机
      * @throws DraccException exception
      */
-    void deregisterInstance(String serviceName, String ip, int port) throws DraccException;
+    boolean deregisterInstance(String serviceName, String ip, int port) throws DraccException;
 
 
     /**

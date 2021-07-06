@@ -120,6 +120,11 @@ public class RaftNode {
     public static volatile long term;
 
     /**
+     * 当前任期是否没投过票
+     */
+    public static volatile boolean notVoted;
+
+    /**
      * 和客户端的连接,主节点才有元素
      */
     public static final Map<String, List<Channel>> IP_CHANNELS_WITH_CLIENT_MAP = new ConcurrentHashMap<>();
@@ -202,6 +207,7 @@ public class RaftNode {
      */
     private static void startElection(String[] remoteNodeIps) {
         role = Role.CANDIDATE;
+        RaftNode.notVoted = false;
         updateTermAndSlaveChannels();
         String voteRequestId = Long.toString(term);
         CountDownLatch countDownLatch = new CountDownLatch(HALF_COUNT);
@@ -266,9 +272,12 @@ public class RaftNode {
         heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, new LinkedBlockingQueue<>(),
                 new ThreadFactoryImpl("heartbeat"));
         heartBeatExecutor.execute(RaftNode::heartbeatAndHealthExam);
-        LogService.commitAllUncommittedLog();
-        //防止原主挂了导致通知任务丢失,选举出新主后重新向所有已注册监听的客户端发送一遍监听的服务内容通知
-        sentNotifications();
+        //放到io线程中执行是为了保证单线程模型
+        NettyServer.workerGroup.execute(() -> {
+            LogService.commitAllUncommittedLog();
+            //防止原主挂了导致通知任务丢失,选举出新主后重新向所有已注册监听的客户端发送一遍监听的服务内容通知
+            sentNotifications();
+        });
     }
 
 
@@ -391,8 +400,9 @@ public class RaftNode {
      */
     private static boolean isAlive(String instance) {
         List<Channel> channels;
-        return (channels = IP_CHANNELS_WITH_CLIENT_MAP.get(instance)) != null
-                && !channels.isEmpty();
+        return (channels = IP_CHANNELS_WITH_CLIENT_MAP.get(StringUtil
+                .stringSplit(instance, Const.COLON)[0])) != null &&
+                !channels.isEmpty();
     }
 
 
@@ -407,6 +417,7 @@ public class RaftNode {
      */
     public synchronized static void downgradeToSlaveNode(boolean needClearUncommitLog, long newTerm) {
         LOGGER.info("downgrade to slave node");
+        RaftNode.notVoted = true;
         long preTerm = RaftNode.updateTerm(term, newTerm);
         List<Channel> oldChannels = TERM_AND_SLAVECHANNELS.remove(Long.toString(preTerm));
         if (oldChannels != null) {

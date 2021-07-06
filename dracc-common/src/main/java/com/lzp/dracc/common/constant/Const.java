@@ -44,6 +44,7 @@ public class Const {
     public static final String YES = "yes";
     public static final char FALSE = 'f';
     public static final char TRUE = 't';
+    public static final String F_TRUE = "true";
     public static final String EXCEPTION = "E";
     public static final String CLUSTER_DOWN_MESSAGE = "cluster is down";
     public static final String ROOT_PATH;

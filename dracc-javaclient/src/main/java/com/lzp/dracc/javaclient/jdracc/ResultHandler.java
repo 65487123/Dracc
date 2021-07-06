@@ -109,7 +109,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
-        String[] threadIdAndResult = StringUtil.stringSplit(new String(bytes, StandardCharsets.UTF_8), Const.COLON);
+        String[] threadIdAndResult = StringUtil.stringSplit(new String(bytes, StandardCharsets.UTF_8), Const.COMMA);
         ThreadResultAndTime threadResultAndTime = reqIdThreadMap.remove(threadIdAndResult[0]);
         if (threadResultAndTime != null) {
             threadResultAndTime.result = threadIdAndResult[1];

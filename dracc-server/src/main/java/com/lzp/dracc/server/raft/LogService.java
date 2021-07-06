@@ -302,12 +302,12 @@ public class LogService {
                 break;
             }
         }
-        int biginIndex = index + 1;
-        if (chars[biginIndex] == '\n') {
-            biginIndex = index + 2;
+        int beginIndex = index + 1;
+        if (chars[beginIndex] == '\n') {
+            beginIndex = index + 2;
         }
-        int numMoved = numRead - biginIndex;
-        System.arraycopy(chars, biginIndex, chars, 0, numMoved);
+        int numMoved = numRead - beginIndex;
+        System.arraycopy(chars, beginIndex, chars, 0, numMoved);
         return numMoved;
     }
 
@@ -463,6 +463,7 @@ public class LogService {
             int num = removeTheFirstLine(BUFFER_FOR_UNCOMMITTED_ENTRY, bufferedReader.read(BUFFER_FOR_UNCOMMITTED_ENTRY));
             uncommittedEntryWriter = new BufferedWriter(new FileWriter(Const.ROOT_PATH + "persistence/uncommittedEntry.txt"));
             uncommittedEntryWriter.write(BUFFER_FOR_UNCOMMITTED_ENTRY, 0, num);
+            uncommittedEntryWriter.flush();
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
         }

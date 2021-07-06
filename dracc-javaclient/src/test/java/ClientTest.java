@@ -21,12 +21,12 @@ public class ClientTest {
         System.out.println(draccClient.getConfig("aaa"));
 
         //service
-        draccClient.registerInstance("serviceTest","127.0.0.1",8888);
-        draccClient.registerInstance("serviceTest","127.0.0.1",8889);
+        System.out.println(draccClient.registerInstance("serviceTest","127.0.0.1",8888));
+        System.out.println(draccClient.registerInstance("serviceTest","127.0.0.1",8889));
         System.out.println(draccClient.getAllInstances("serviceTest"));
         //检测服务健康检查
         draccClient.close();
-        Thread.sleep(30000);
+        Thread.sleep(60000);
         draccClient = new JDracc(3000,"127.0.0.1:6667", "127.0.0.1:6668", "127.0.0.1:6669");
         System.out.println(draccClient.getConfig("aaa"));
         System.out.println(draccClient.getAllInstances("serviceTest"));

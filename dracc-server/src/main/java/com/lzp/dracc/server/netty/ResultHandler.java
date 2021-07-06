@@ -38,7 +38,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext channelHandlerContext, byte[] bytes) {
-        String[] message = StringUtil.stringSplit(new String(bytes, UTF_8), Const.COLON);
+        String[] message = StringUtil.stringSplit(new String(bytes, UTF_8), Const.COMMA);
 
         if (Const.YES.equals(message[1])) {
             RaftNode.cidAndResultMap.get(message[0]).countDown();
