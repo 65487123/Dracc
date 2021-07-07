@@ -277,17 +277,19 @@ public class JDracc implements DraccClient {
     @Override
     public void subscribe(String serviceName, EventListener listener) throws DraccException {
         Set<EventListener> eventListeners;
-        if ((eventListeners = ResultHandler.serviceNameListenerMap.get(serviceName)) == null) {
-            subscribe0(serviceName);
-            synchronized (this) {
-                if ((eventListeners = ResultHandler.serviceNameListenerMap.get(serviceName)) == null) {
+        if ((eventListeners = ResultHandler.SERVICE_NAME_LISTENER_MAP.get(serviceName)) == null) {
+            synchronized (ResultHandler.SERVICE_NAME_LISTENER_MAP) {
+                if ((eventListeners = ResultHandler.SERVICE_NAME_LISTENER_MAP.get(serviceName)) == null) {
                     eventListeners = new CopyOnWriteArraySet<>();
+                    ResultHandler.SERVICE_NAME_LISTENER_MAP.put(serviceName, eventListeners);
                 }
             }
+            eventListeners.add(listener);
+            subscribe0(serviceName);
         } else if (!eventListeners.contains(listener)) {
+            eventListeners.add(listener);
             subscribe0(serviceName);
         }
-        eventListeners.add(listener);
     }
 
 
@@ -303,7 +305,7 @@ public class JDracc implements DraccClient {
     @Override
     public void unsubscribe(String serviceName, EventListener listener) throws DraccException {
         Set<EventListener> eventListeners;
-        if ((eventListeners = ResultHandler.serviceNameListenerMap.get(serviceName)) != null) {
+        if ((eventListeners = ResultHandler.SERVICE_NAME_LISTENER_MAP.get(serviceName)) != null) {
             eventListeners.remove(listener);
             if (eventListeners.size() == 0) {
                 Thread currentThread;

@@ -80,7 +80,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * Description:key是监听的服务名，这个服务名的监听器
      */
-    public static Map<String, Set<EventListener>> serviceNameListenerMap = new ConcurrentHashMap<>();
+    public static final Map<String, Set<EventListener>> SERVICE_NAME_LISTENER_MAP = new ConcurrentHashMap<>();
 
 
     static {
@@ -117,7 +117,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
         } else {
             try {
                 String[] nameAndInstances = StringUtil.stringSplit(threadIdAndResult[1], Const.COMMAND_SEPARATOR);
-                Set<EventListener> eventListenerList = serviceNameListenerMap.get(nameAndInstances[0]);
+                Set<EventListener> eventListenerList = SERVICE_NAME_LISTENER_MAP.get(nameAndInstances[0]);
                 List<String> latestInstances = CommonUtil.deserial(nameAndInstances[1]);
                 for (EventListener eventListener : eventListenerList) {
                     eventListener.onEvent(latestInstances);

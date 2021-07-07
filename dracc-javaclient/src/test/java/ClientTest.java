@@ -36,10 +36,14 @@ public class ClientTest {
                 System.out.println("监听到服务变动,变动后的服务实例列表为:"+var1);
             }
         });
-        //检测服务健康检查,由于注册的服务实例ip是乱写的,会被检测到不可达然后删除.
-        Thread.sleep(60000);
+        //检测服务健康检查
+        Thread.sleep(30000);
         System.out.println(draccClient.getConfig("aaa"));
+        //由于注册的服务实例ip是乱写的,会被检测到不可达然后删除.
         System.out.println(draccClient.getAllInstances("serviceTest"));
+
+        //lock
+
 
     }
 }

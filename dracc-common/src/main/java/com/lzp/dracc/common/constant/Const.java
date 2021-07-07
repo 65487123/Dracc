@@ -18,6 +18,7 @@ package com.lzp.dracc.common.constant;
 
 import com.lzp.dracc.common.util.PropertyUtil;
 
+
 /**
  * Description:常量类
  *
@@ -52,6 +53,7 @@ public class Const {
     public static final String ZERO = "0";
     public static final String ONE = "1";
     public static final String TWO = "2";
+    public static final String UUID = java.util.UUID.randomUUID().toString();
 
     static {
         String path = PropertyUtil.class.getProtectionDomain().getCodeSource().getLocation().getPath();

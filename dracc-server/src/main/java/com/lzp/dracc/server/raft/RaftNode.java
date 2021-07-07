@@ -286,7 +286,7 @@ public class RaftNode {
      */
     private static void sentNotifications() {
         for (String service : data[0].keySet()) {
-            notifyListeners(service);
+            notifyListeners(service, "");
         }
     }
 
@@ -590,28 +590,33 @@ public class RaftNode {
      * 向客户端发送通知
      */
     private static void sentNotification(Channel channel, String service) {
-        channel.writeAndFlush((service + Const.COMMAND_SEPARATOR + CommonUtil
-                .serial((Set<String>) RaftNode.data[0].get(service))).getBytes(UTF_8));
+        channel.writeAndFlush((Const.UUID + Const.COMMA + service + Const
+                .COMMAND_SEPARATOR + CommonUtil.serial((Set<String>) RaftNode
+                .data[0].get(service))).getBytes(UTF_8));
     }
 
 
     /**
      * 通知所有监听器
      */
-    public static void notifyListeners(String serviceName) {
+    public static void notifyListeners(String serviceName, String excludedIp) {
         Set<String> ips;
         if ((ips = (Set<String>) RaftNode.data[1].get(serviceName)) != null) {
             for (String ip : ips) {
-                BlockingQueue<String> queue;
-                if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) != null) {
-                    queue.offer(serviceName);
-                } else {
-                    synchronized (ALL_NOTIFICATION_TOBESENT) {
-                        if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) == null) {
-                            queue = new LinkedBlockingQueue<>();
-                            ALL_NOTIFICATION_TOBESENT.put(ip, queue);
-                        }
+                if (!ip.equals(excludedIp)) {
+                    BlockingQueue<String> queue;
+                    if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) != null) {
+                        System.out.println("发送通知,服务名:"+serviceName+",ip:"+ip);
                         queue.offer(serviceName);
+                    } else {
+                        synchronized (ALL_NOTIFICATION_TOBESENT) {
+                            if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) == null) {
+                                queue = new LinkedBlockingQueue<>();
+                                ALL_NOTIFICATION_TOBESENT.put(ip, queue);
+                            }
+                            System.out.println("发送通知,服务名:"+serviceName+",ip:"+ip);
+                            queue.offer(serviceName);
+                        }
                     }
                 }
             }

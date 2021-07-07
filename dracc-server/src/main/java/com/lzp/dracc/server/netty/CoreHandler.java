@@ -443,13 +443,16 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 operSucceed = services.add(command[5]);
             }
         }
+        notifySlavesToCommitTheLog();
         //channelHandlerContext有可能为null(健康检查时删除服务会传null)。
         if (channelHandlerContext != null) {
             channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + operSucceed).getBytes(UTF_8));
-        }
-        notifySlavesToCommitTheLog();
-        if (operSucceed) {
-            RaftNode.notifyListeners(command[4]);
+            if (operSucceed) {
+                RaftNode.notifyListeners(command[4], ((InetSocketAddress) channelHandlerContext.channel().remoteAddress())
+                        .getAddress().getHostAddress());
+            }
+        } else if (operSucceed) {
+            RaftNode.notifyListeners(command[4], "");
         }
     }
 
