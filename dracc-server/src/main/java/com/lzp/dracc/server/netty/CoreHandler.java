@@ -363,6 +363,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                                                              ChannelHandlerContext channelHandlerContext, boolean isRem) {
         boolean halfAgree = false;
         try {
+            System.out.println("等待响应:"+ Arrays.toString(command));
             halfAgree = countDownLatch.await(30, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             LOGGER.error("interrupted when waitting for response from slaves", e);

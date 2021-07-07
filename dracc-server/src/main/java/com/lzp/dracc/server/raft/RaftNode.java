@@ -122,7 +122,7 @@ public class RaftNode {
     /**
      * 当前任期是否没投过票
      */
-    public static volatile boolean notVoted;
+    public static volatile boolean notVoted = true;
 
     /**
      * 和客户端的连接,主节点才有元素
@@ -417,6 +417,7 @@ public class RaftNode {
      */
     public synchronized static void downgradeToSlaveNode(boolean needClearUncommitLog, long newTerm) {
         LOGGER.info("downgrade to slave node");
+        printStack();
         RaftNode.notVoted = true;
         long preTerm = RaftNode.updateTerm(term, newTerm);
         List<Channel> oldChannels = TERM_AND_SLAVECHANNELS.remove(Long.toString(preTerm));
@@ -438,6 +439,25 @@ public class RaftNode {
         timeoutToElectionExecutor.execute(ELECTION_TASK);
     }
 
+    private static void printStack(){
+        StackTraceElement[] st = Thread.currentThread().getStackTrace();
+        if(st==null){
+            System.out.println("无堆栈...");
+            return;
+        }
+        StringBuffer sbf =new StringBuffer();
+        for(StackTraceElement e:st){
+            if(sbf.length()>0){
+                sbf.append(" <- ");
+                sbf.append(System.getProperty("line.separator"));
+            }
+            sbf.append(java.text.MessageFormat.format("{0}.{1}() {2}"
+                    ,e.getClassName()
+                    ,e.getMethodName()
+                    ,e.getLineNumber()));
+        }
+        System.out.println(sbf.toString());
+    }
 
     /**
      * 关闭执行心跳任务的线程池
