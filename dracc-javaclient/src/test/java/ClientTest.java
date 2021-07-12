@@ -29,13 +29,8 @@ public class ClientTest {
         System.out.println(draccClient.getAllInstances("serviceTest"));
         System.out.println(draccClient.deregisterInstance("serviceTest","34.2.0.1",8888));
         System.out.println(draccClient.getAllInstances("serviceTest"));
-        //事件监听,测试方法:把server部署到另外的机器上,然后这边把网线拔了,过一段时间再把网线插上。
-        draccClient.subscribe("serviceTest", new EventListener() {
-            @Override
-            public void onEvent(List<String> var1) {
-                System.out.println("监听到服务变动,变动后的服务实例列表为:"+var1);
-            }
-        });
+        //事件监听
+        draccClient.subscribe("serviceTest", var1 -> System.out.println("监听到服务变动,变动后的服务实例列表为:"+var1));
         //检测服务健康检查
         Thread.sleep(30000);
         System.out.println(draccClient.getConfig("aaa"));
