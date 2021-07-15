@@ -91,7 +91,7 @@ public class RaftNode {
     /**
      * 执行心跳任务的线程池
      */
-    private static ExecutorService heartBeatExecutor;
+    private static ScheduledExecutorService heartBeatAndHealthCheckExecutor;
 
     /**
      * 执行重连任务的线程池
@@ -158,7 +158,7 @@ public class RaftNode {
     /**
      * 删除服务实例命令的一部分,健康检查时检查到失活的服务时会用到
      */
-    private static final String[] COMMAND_FOR_DEL_SERVICE = new String[]{Const.ONE, Const.RPC_FROMCLIENT, Const.ZERO
+    private static final String[] COMMAND_FOR_DEL_SERVICE = new String[]{"", Const.RPC_FROMCLIENT, Const.ZERO
             , Command.REM, "", ""};
 
     static {
@@ -269,9 +269,11 @@ public class RaftNode {
         LOGGER.info("successful election, upgrade to the master node");
         role = Role.LEADER;
         CoreHandler.slaves = TERM_AND_SLAVECHANNELS.get(term);
-        heartBeatExecutor = new ThreadPoolExecutor(1, 1, 0, new LinkedBlockingQueue<>(),
-                new ThreadFactoryImpl("heartbeat"));
-        heartBeatExecutor.execute(RaftNode::heartbeatAndHealthExam);
+        heartBeatAndHealthCheckExecutor = new ScheduledThreadPoolExecutor(3
+                , new ThreadFactoryImpl("heartbeatAndHealthCheck"));
+        heartBeatAndHealthCheckExecutor.scheduleWithFixedDelay(RaftNode::heartbeatToSlaves, 5, 5, TimeUnit.SECONDS);
+        heartBeatAndHealthCheckExecutor.scheduleWithFixedDelay(RaftNode::performServiceHealthCheck, 5, 20, TimeUnit.SECONDS);
+        heartBeatAndHealthCheckExecutor.scheduleWithFixedDelay(RaftNode::performLockHealthCheck, 5, 40, TimeUnit.SECONDS);
         //放到io线程中执行是为了保证单线程模型
         NettyServer.workerGroup.execute(() -> {
             LogService.commitAllUncommittedLog();
@@ -290,21 +292,6 @@ public class RaftNode {
         }
     }
 
-    /**
-     * 心跳以及服务健康检查
-     */
-    private static void heartbeatAndHealthExam() {
-        while (true) {
-            heartbeatToSlaves();
-            try {
-                Thread.sleep(5000);
-            } catch (InterruptedException e) {
-                break;
-            }
-            performServiceHealthCheck();
-            performLockHealthCheck();
-        }
-    }
 
     /**
      * 向从节点发心跳
@@ -343,8 +330,8 @@ public class RaftNode {
                     实现了NonWakeupRunnable,则不会唤醒)
                     */
                         NettyServer.workerGroup.execute(() -> CoreHandler.handleServiceWrite(true,
-                                generCommandForDelService(serviceAndInstances.getKey(), instance),
-                                null));
+                                generCommandForDelService(Thread.currentThread().getName() + serviceAndInstances
+                                        .getKey() + instance, serviceAndInstances.getKey(), instance), null));
                     }
                 }
             }
@@ -389,7 +376,8 @@ public class RaftNode {
     /**
      * 生成删除服务实例的命令
      */
-    private static String[] generCommandForDelService(String serviceName, String instance) {
+    private static String[] generCommandForDelService(String commandName, String serviceName, String instance) {
+        COMMAND_FOR_DEL_SERVICE[0] = commandName;
         COMMAND_FOR_DEL_SERVICE[4] = serviceName;
         COMMAND_FOR_DEL_SERVICE[5] = instance;
         return COMMAND_FOR_DEL_SERVICE;
@@ -417,7 +405,6 @@ public class RaftNode {
      */
     public synchronized static void downgradeToSlaveNode(boolean needClearUncommitLog, long newTerm) {
         LOGGER.info("downgrade to slave node");
-        printStack();
         RaftNode.notVoted = true;
         long preTerm = RaftNode.updateTerm(term, newTerm);
         List<Channel> oldChannels = TERM_AND_SLAVECHANNELS.remove(Long.toString(preTerm));
@@ -439,32 +426,13 @@ public class RaftNode {
         timeoutToElectionExecutor.execute(ELECTION_TASK);
     }
 
-    private static void printStack(){
-        StackTraceElement[] st = Thread.currentThread().getStackTrace();
-        if(st==null){
-            System.out.println("无堆栈...");
-            return;
-        }
-        StringBuffer sbf =new StringBuffer();
-        for(StackTraceElement e:st){
-            if(sbf.length()>0){
-                sbf.append(" <- ");
-                sbf.append(System.getProperty("line.separator"));
-            }
-            sbf.append(java.text.MessageFormat.format("{0}.{1}() {2}"
-                    ,e.getClassName()
-                    ,e.getMethodName()
-                    ,e.getLineNumber()));
-        }
-        System.out.println(sbf.toString());
-    }
 
     /**
      * 关闭执行心跳任务的线程池
      */
     private static void shutdownHeartbeatExecutor() {
-        if (heartBeatExecutor != null) {
-            heartBeatExecutor.shutdownNow();
+        if (heartBeatAndHealthCheckExecutor != null) {
+            heartBeatAndHealthCheckExecutor.shutdownNow();
         }
     }
 
@@ -606,7 +574,6 @@ public class RaftNode {
                 if (!ip.equals(excludedIp)) {
                     BlockingQueue<String> queue;
                     if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) != null) {
-                        System.out.println("发送通知,服务名:"+serviceName+",ip:"+ip);
                         queue.offer(serviceName);
                     } else {
                         synchronized (ALL_NOTIFICATION_TOBESENT) {
@@ -614,7 +581,6 @@ public class RaftNode {
                                 queue = new LinkedBlockingQueue<>();
                                 ALL_NOTIFICATION_TOBESENT.put(ip, queue);
                             }
-                            System.out.println("发送通知,服务名:"+serviceName+",ip:"+ip);
                             queue.offer(serviceName);
                         }
                     }

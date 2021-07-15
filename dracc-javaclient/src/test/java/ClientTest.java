@@ -26,6 +26,7 @@ public class ClientTest {
         //service
         System.out.println(draccClient.registerInstance("serviceTest","34.2.0.1",8888));
         System.out.println(draccClient.registerInstance("serviceTest","123.2.0.1",8889));
+        System.out.println(draccClient.registerInstance("serviceTest","125.2.0.1",8889));
         System.out.println(draccClient.getAllInstances("serviceTest"));
         System.out.println(draccClient.deregisterInstance("serviceTest","34.2.0.1",8888));
         System.out.println(draccClient.getAllInstances("serviceTest"));
