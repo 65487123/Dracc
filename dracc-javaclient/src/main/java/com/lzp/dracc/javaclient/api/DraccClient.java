@@ -22,12 +22,12 @@ import com.lzp.dracc.javaclient.exception.DraccException;
 import java.util.List;
 
 /**
- * Description:注册中心客户端接口
+ * Description:Dracc客户端接口
  *
  * @author: Zeping Lu
  * @date: 2021/4/30 17:53
  */
-public interface DraccClient extends AutoCloseable{
+public interface DraccClient extends AutoCloseable {
 
     /**
      * 注册一个服务实例
@@ -124,6 +124,7 @@ public interface DraccClient extends AutoCloseable{
     /**
      * 获取分布式锁
      * 同一个线程可以获取多次(可重入)
+     *
      * @param lockName 锁名(唯一id)
      * @throws DraccException exception
      */
@@ -148,7 +149,7 @@ public interface DraccClient extends AutoCloseable{
 
 
     /**
-     * @return 如果本客户端已经关闭返回true,否则返回false
+     * @return 如果本客户端已经关闭返回true, 否则返回false
      */
     boolean isClosed();
 
