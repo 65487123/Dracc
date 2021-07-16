@@ -25,7 +25,7 @@ Dracc的java客户端
 
 3、用这个DraccClient实例操作Dracc-server。具体的使用方法参考[DraccClient](https://github.com/65487123/Dracc/blob/main/dracc-javaclient/src/main/java/com/lzp/dracc/javaclient/api/DraccClient.java)这个接口的java doc。  
 
-在dracc-javaclient/src/test目录下有我写的例子,代码拉下来也能直接跑
+在[dracc-javaclient/src/test](https://github.com/65487123/Dracc/blob/main/dracc-javaclient/src/test/java/ClientTest.java)目录下有我写的例子,包括功能测试以及性能测试,代码拉下来也能直接跑
         
 
 
