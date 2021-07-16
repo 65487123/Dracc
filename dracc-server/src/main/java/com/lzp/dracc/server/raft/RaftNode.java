@@ -30,8 +30,10 @@ import com.lzp.dracc.server.util.DataSearialUtil;
 import com.lzp.dracc.server.util.LogoUtil;
 import com.lzp.dracc.server.util.ThreadPoolExecutor;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.converter.json.GsonBuilderUtils;
 
 import java.net.InetSocketAddress;
 import java.util.*;
@@ -155,11 +157,6 @@ public class RaftNode {
      */
     private static final Map<String, BlockingQueue<String>> ALL_NOTIFICATION_TOBESENT = new ConcurrentHashMap<>();
 
-    /**
-     * 删除服务实例命令的一部分,健康检查时检查到失活的服务时会用到
-     */
-    private static final String[] COMMAND_FOR_DEL_SERVICE = new String[]{"", Const.RPC_FROMCLIENT, Const.ZERO
-            , Command.REM, "", ""};
 
     static {
         Properties clusterProperties = PropertyUtil.getProperties(Const.CLU_PRO);
@@ -377,10 +374,8 @@ public class RaftNode {
      * 生成删除服务实例的命令
      */
     private static String[] generCommandForDelService(String commandName, String serviceName, String instance) {
-        COMMAND_FOR_DEL_SERVICE[0] = commandName;
-        COMMAND_FOR_DEL_SERVICE[4] = serviceName;
-        COMMAND_FOR_DEL_SERVICE[5] = instance;
-        return COMMAND_FOR_DEL_SERVICE;
+        return new String[]{commandName, Const.RPC_FROMCLIENT, Const.ZERO
+                , Command.REM, serviceName, instance};
     }
 
     /**
@@ -559,7 +554,7 @@ public class RaftNode {
      */
     private static void sentNotification(Channel channel, String service) {
         channel.writeAndFlush((Const.UUID + Const.COMMA + service + Const
-                .COMMAND_SEPARATOR + CommonUtil.serial((Set<String>) RaftNode
+                .SPECIFICORDER_SEPARATOR + CommonUtil.serial((Set<String>) RaftNode
                 .data[0].get(service))).getBytes(UTF_8));
     }
 
@@ -589,6 +584,30 @@ public class RaftNode {
         }
     }
 
+
+    /**
+     * 对方日志不比自己旧就投他一票
+     */
+    public static boolean voteIfNotVotedAndTheLogMatches(String oppoCommittedLogIndex, String oppoUnCommittedLogIndex,
+                                                         String reqId, ChannelHandlerContext channelHandlerContext) {
+        if (RaftNode.notVoted && logIsNotOlder(oppoCommittedLogIndex, oppoUnCommittedLogIndex)) {
+            channelHandlerContext.writeAndFlush((reqId + Const.COMMA + Const.YES).getBytes(UTF_8));
+            RaftNode.notVoted = false;
+            LOGGER.info("Voted for the candidate : {}", ((InetSocketAddress) channelHandlerContext
+                    .channel().remoteAddress()).getAddress().getHostAddress());
+            return true;
+        }
+        return false;
+    }
+
+
+    /**
+     * 判断日志是否不比本节点日志旧
+     */
+    public static boolean logIsNotOlder(String commiteedLogIndex, String uncommiteedLogIndex) {
+        return Long.parseLong(commiteedLogIndex) >= LogService.getCommittedLogIndex()
+                && Long.parseLong(uncommiteedLogIndex) >= LogService.getUncommittedLogSize();
+    }
 
     /**
      * 启动raft节点

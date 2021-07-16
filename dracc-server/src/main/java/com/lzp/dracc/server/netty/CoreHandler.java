@@ -220,7 +220,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         if (Role.FOLLOWER == RaftNode.getRole()) {
             if (opposingTerm >= RaftNode.term) {
                 RaftNode.updateTerm(RaftNode.term, opposingTerm);
-                if (voteIfNotVotedAndTheLogMatches(command[3], command[4], command[0], channelHandlerContext)) {
+                if (RaftNode.voteIfNotVotedAndTheLogMatches(command[3], command[4], command[0], channelHandlerContext)) {
                     RaftNode.resetTimer();
                 }
             }
@@ -228,7 +228,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             if (opposingTerm > RaftNode.term) {
                 //1、网络分区恢复后 2、对方和本节点同时发起选举,但是对方竞选失败发起下一轮选举
                 RaftNode.downgradeToSlaveNode(false, opposingTerm);
-                voteIfNotVotedAndTheLogMatches(command[3], command[4], command[0], channelHandlerContext);
+                RaftNode.voteIfNotVotedAndTheLogMatches(command[3], command[4], command[0], channelHandlerContext);
             } else {
                 //比对方先取得半数票,已经竞选成功或者网络分区后本节点在多数派
                 channelHandlerContext.writeAndFlush((Const.RPC_TOBESLAVE + Const.COMMA + LogService.getTerm()).getBytes(UTF_8));
@@ -236,7 +236,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } else {
             if (opposingTerm > RaftNode.term) {
                 RaftNode.downgradeToSlaveNode(false, opposingTerm);
-                if (voteIfNotVotedAndTheLogMatches(command[3], command[4], command[0], channelHandlerContext)) {
+                if (RaftNode.voteIfNotVotedAndTheLogMatches(command[3], command[4], command[0], channelHandlerContext)) {
                     RaftNode.downgradeToSlaveNode(false, opposingTerm);
                 }
             }
@@ -244,36 +244,6 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     }
 
 
-    /**
-     * 对方日志不比自己旧就投他一票
-     */
-    private boolean voteIfNotVotedAndTheLogMatches(String oppoCommittedLogIndex, String oppoUnCommittedLogIndex,
-                                                   String reqId, ChannelHandlerContext channelHandlerContext) {
-
-        if (RaftNode.notVoted && logIsNotOlder(oppoCommittedLogIndex, oppoUnCommittedLogIndex)) {
-            channelHandlerContext.writeAndFlush((reqId + Const.COMMA + Const.YES).getBytes(UTF_8));
-            RaftNode.notVoted = false;
-            return true;
-        }
-        return false;
-    }
-
-
-    /**
-     * 判断日志是否不比本节点日志旧
-     */
-    private boolean logIsNotOlder(String commiteedLogIndex, String uncommiteedLogIndex) {
-        return Long.parseLong(commiteedLogIndex) >= LogService.getCommittedLogIndex()
-                && Long.parseLong(uncommiteedLogIndex) >= LogService.getUncommittedLogSize();
-    }
-
-    /**
-     * 判断日志是否比自己新
-     */
-    private boolean logIsNewer(String commiteedLogIndex, String uncommiteedLogIndex) {
-        return Long.parseLong(commiteedLogIndex) > LogService.getCommittedLogIndex()
-                && Long.parseLong(uncommiteedLogIndex) > LogService.getUncommittedLogSize();
-    }
 
     /**
      * 处理客户端具体请求

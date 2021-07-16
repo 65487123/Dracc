@@ -32,9 +32,8 @@ public interface DraccClient extends AutoCloseable{
     /**
      * 注册一个服务实例
      * 注意:
-     * 1、注册的服务实例要和客户端本机ip一致
-     * 2、在关闭服务前不要close掉所有客户端(至少要保证一个客户端存活,不然注册的实例会被标记为不健康并移除)
-     * 3、关闭服务后需要close掉所有客户端,或者直接关停JVM。(这样服务才会自动被注册中心移除)
+     * 1、注册的服务实例要和客户端本机ip一致。
+     * 2、在关闭服务前不要close掉所有客户端。(至少要保证一个客户端存活,不然注册的实例会被标记为不健康并移除)
      *
      * @param serviceName name of service
      * @param ip          instance ip
@@ -47,7 +46,7 @@ public interface DraccClient extends AutoCloseable{
 
     /**
      * 注销一个服务实例
-     * 注意：由谁注册的实例就由谁来注销。不然可能会出问题
+     * 注意：最好由谁注册的实例就由谁来注销。不然可能会出问题。
      *
      * @param serviceName 服务名 (唯一id)
      * @param ip          实例ip
@@ -115,8 +114,8 @@ public interface DraccClient extends AutoCloseable{
     /**
      * 根据配置名获取配置名的所有配置
      *
-     * @param configName name of config
-     * @return A list of string(all configs)
+     * @param configName 配置名
+     * @return 一个字符串list(所有配置值)
      * @throws DraccException exception
      */
     List<String> getConfig(String configName) throws DraccException;
@@ -149,7 +148,7 @@ public interface DraccClient extends AutoCloseable{
 
 
     /**
-     * @return true If the client has been closed , otherwise false
+     * @return 如果本客户端已经关闭返回true,否则返回false
      */
     boolean isClosed();
 

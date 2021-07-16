@@ -116,7 +116,7 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
             LockSupport.unpark(threadResultAndTime.thread);
         } else {
             try {
-                String[] nameAndInstances = StringUtil.stringSplit(threadIdAndResult[1], Const.COMMAND_SEPARATOR);
+                String[] nameAndInstances = StringUtil.stringSplit(threadIdAndResult[1], Const.SPECIFICORDER_SEPARATOR);
                 Set<EventListener> eventListenerList = SERVICE_NAME_LISTENER_MAP.get(nameAndInstances[0]);
                 List<String> latestInstances = CommonUtil.deserial(nameAndInstances[1]);
                 for (EventListener eventListener : eventListenerList) {
