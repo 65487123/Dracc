@@ -39,7 +39,7 @@
 
 ## 客户端使用教程
 
-[Java客户端](https://github.com/65487123/15648)
+[Java客户端](https://github.com/65487123/Dracc/blob/main/dracc-javaclient/CLI_README.md)
 
 
 
