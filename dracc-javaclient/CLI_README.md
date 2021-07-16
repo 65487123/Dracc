@@ -23,7 +23,7 @@ Dracc的java客户端
     //带超时时间的客户端,超时时间为3s(请求server时,超过3s没响应就会抛异常)
     DraccClient draccClient1 = new JDracc(3000, ipAndPortA, ipAndPortB, ipAndPortC);
 
-3、用这个DraccClient实例操作Dracc-server。具体的使用方法参考DraccClient这个接口的java doc。  
+3、用这个DraccClient实例操作Dracc-server。具体的使用方法参考[DraccClient](https://github.com/65487123/Dracc/blob/main/dracc-javaclient/src/main/java/com/lzp/dracc/javaclient/api/DraccClient.java)这个接口的java doc。  
 
 在dracc-javaclient/src/test目录下有我写的例子,代码拉下来也能直接跑
         
