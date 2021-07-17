@@ -34,6 +34,7 @@ public interface DraccClient extends AutoCloseable {
      * 注意:
      * 1、注册的服务实例要和客户端本机ip一致。
      * 2、在关闭服务前不要close掉所有客户端。(至少要保证一个客户端存活,不然注册的实例会被标记为不健康并移除)
+     * 3、关闭服务时(释放server监听的端口)需要手动注销这个服务实例(实例会立即消失)或者关闭本机的所有客户端(实例会一段时间后消失)
      *
      * @param serviceName name of service
      * @param ip          instance ip

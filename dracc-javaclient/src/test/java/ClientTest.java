@@ -47,18 +47,17 @@ public class ClientTest {
 
 
         //性能测试
+        //写配置性能
         //模拟开30个客户端并发写配置,每个客户端写1000条配置,测总共耗时(这里只是很简单地测试,但也可以看出大致的性能水平)
-        ExecutorService threadPool = new ThreadPoolExecutor(30, 30, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         System.out.println("开始性能测试");
+        ExecutorService threadPool = new ThreadPoolExecutor(30, 30, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         long beginTime = System.currentTimeMillis();
         for (int i = 0; i < 30; i++) {
             threadPool.execute(() -> {
                 for (int j = 0; j < 1000; j++) {
-                    String keAndVal;
                     try {
-                        draccClient.addConfig(keAndVal = String.valueOf(j), keAndVal);
-                    } catch (DraccException e) {
-                        e.printStackTrace();
+                        draccClient.addConfig("1","1");
+                    } catch (DraccException ignored) {
                     }
                 }
             });
@@ -67,6 +66,24 @@ public class ClientTest {
         threadPool.awaitTermination(10000, TimeUnit.SECONDS);
         long time = System.currentTimeMillis() - beginTime;
         System.out.println("30个客户端并发写配置,TPS = " + (new BigDecimal(30000).divide(new BigDecimal(time)
+                .divide(new BigDecimal(1000), 3, RoundingMode.CEILING), 3, RoundingMode.CEILING)));
+        //读配置性能
+        threadPool = new ThreadPoolExecutor(30, 30, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        beginTime = System.currentTimeMillis();
+        for (int i = 0; i < 30; i++) {
+            threadPool.execute(() -> {
+                for (int j = 0; j < 1000; j++) {
+                    try {
+                        draccClient.getConfig("1");
+                    } catch (DraccException ignored) {
+                    }
+                }
+            });
+        }
+        threadPool.shutdown();
+        threadPool.awaitTermination(10000, TimeUnit.SECONDS);
+        time = System.currentTimeMillis() - beginTime;
+        System.out.println("30个客户端并发读配置,QPS = " + (new BigDecimal(30000).divide(new BigDecimal(time)
                 .divide(new BigDecimal(1000), 3, RoundingMode.CEILING), 3, RoundingMode.CEILING)));
     }
 }
