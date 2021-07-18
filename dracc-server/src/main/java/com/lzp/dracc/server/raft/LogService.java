@@ -124,19 +124,16 @@ public class LogService {
 
     /**
      * 提交第一条未提交的日志
+     *
+     * @return 是否改变了状态机
      */
-    public static void commitFirstUncommittedLog() {
-        removeFirstUncommittedEntry();
-        String command;
-        try {
-            long index = appendCommittedLog(command = uncommittedEntries.poll());
-            parseAndExecuteCommand(command);
-            if (index % SNAPSHOT_BATCH_COUNT == 0) {
-                generateSnapshotAndClearJournal(new Data(RaftNode.data));
-            }
-        } catch (IOException e) {
-            LOGGER.error("append committed log failed", e);
+    public static boolean commitFirstUncommittedLog() {
+        String command = removeFirstUncommittedEntry();
+        if (parseAndExecuteCommand(command)) {
+            appendCommittedLog(command);
+            return true;
         }
+        return false;
     }
 
     /**
@@ -357,71 +354,83 @@ public class LogService {
 
     /**
      * 执行写状态机的具体操作
+     * @return 是否改变了状态机
      */
-    private static void parseAndExecuteCommand(String command) {
+    private static boolean parseAndExecuteCommand(String command) {
         String[] commandDetails = StringUtil.stringSplit(command, Const.SPECIFICORDER_SEPARATOR);
-        if (Const.ZERO.equals(commandDetails[1])) {
-            executeCommandForService(commandDetails);
-        } else if (Const.ONE.equals(commandDetails[2])) {
-            executeCommandForConfig(commandDetails);
+        if (Const.ZERO.equals(commandDetails[0])) {
+            return executeCommandForService(commandDetails);
+        } else if (Const.ONE.equals(commandDetails[0])) {
+            return executeCommandForConfig(commandDetails);
         } else {
-            executeCommandForLock(commandDetails);
+            return executeCommandForLock(commandDetails);
         }
     }
 
     /**
      * 执行针对服务的命令
+     * @return 是否改变了状态机
      */
-    private static void executeCommandForService(String[] commandDetails) {
+    private static boolean executeCommandForService(String[] commandDetails) {
         Set<String> services;
-        if (Command.ADD.equals(commandDetails[0])) {
+        boolean operSucceed = false;
+        if (Command.ADD.equals(commandDetails[1])) {
             if ((services = (Set<String>) RaftNode.data[0].get(commandDetails[2])) == null) {
                 services = new HashSet<>();
                 RaftNode.data[0].put(commandDetails[2], services);
             }
-            services.add(commandDetails[3]);
+            //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。下面原因相同
+            synchronized (services) {
+                operSucceed = services.add(commandDetails[3]);
+            }
         } else {
             if ((services = (Set<String>) RaftNode.data[0].get(commandDetails[2])) != null) {
-                services.remove(commandDetails[3]);
-            }
-            if (services.isEmpty()) {
-                RaftNode.data[0].remove(commandDetails[2]);
+                synchronized (services) {
+                    operSucceed = services.remove(commandDetails[3]);
+                }
+                if (services.isEmpty()) {
+                    RaftNode.data[0].remove(commandDetails[2]);
+                }
             }
         }
+        return operSucceed;
     }
 
     /**
      * 执行针对配置的命令
+     * @return 是否改变了状态机
      */
-    private static void executeCommandForConfig(String[] commandDetails) {
+    private static boolean executeCommandForConfig(String[] commandDetails) {
         Set<String> configs;
-        if (Command.ADD.equals(commandDetails[0])) {
+        if (Command.ADD.equals(commandDetails[1])) {
             if ((configs = (Set<String>) RaftNode.data[1].get(commandDetails[2])) == null) {
                 configs = new HashSet<>();
                 RaftNode.data[1].put(commandDetails[2], configs);
             }
-            configs.add(commandDetails[3]);
+            return configs.add(commandDetails[3]);
         } else {
             if ((configs = (Set<String>) RaftNode.data[1].get(commandDetails[2])) != null) {
-                configs.remove(commandDetails[3]);
+                return configs.remove(commandDetails[3]);
             }
+            return false;
         }
     }
 
     /**
      * 执行针对锁的命令
+     * @return 是否改变了状态机
      */
-    private static void executeCommandForLock(String[] commandDetails) {
-        if (Command.ADD.equals(commandDetails[0])) {
+    private static boolean executeCommandForLock(String[] commandDetails) {
+        if (Command.ADD.equals(commandDetails[1])) {
             List<String> locks;
             if ((locks = (List<String>) RaftNode.data[2].get(commandDetails[2])) == null) {
                 locks = new LinkedList<>();
                 RaftNode.data[2].put(commandDetails[2], locks);
-                locks.add(commandDetails[3]);
+                return locks.add(commandDetails[3]);
             } else if (locks.size() == 0) {
                 locks.add(commandDetails[3]);
             } else if (!locks.contains(commandDetails[3])) {
-                locks.add(commandDetails[3]);
+                return locks.add(commandDetails[3]);
             }
         } else {
             LinkedList<String> locks;
@@ -431,16 +440,23 @@ public class LogService {
                 locks.removeFirst();
             }
         }
+        return false;
     }
 
     /**
      * 添加已提交的日志条目
      */
-    private static long appendCommittedLog(String command) throws IOException {
-        committedEntryWriter.write(command);
-        committedEntryWriter.newLine();
-        committedEntryWriter.flush();
-        return ++committedIndex;
+    public static void appendCommittedLog(String command) {
+        try {
+            committedEntryWriter.write(command);
+            committedEntryWriter.newLine();
+            committedEntryWriter.flush();
+            if (++committedIndex % SNAPSHOT_BATCH_COUNT == 0) {
+                generateSnapshotAndClearJournal(new Data(RaftNode.data));
+            }
+        } catch (IOException e) {
+            LOGGER.error("append committed log failed", e);
+        }
     }
 
     /**
@@ -456,17 +472,19 @@ public class LogService {
     }
 
     /**
-     * 把保存未提交日志的文件第一行删除
+     * 把保存未提交日志的文件第一行删除,并返回内容
      */
-    private static void removeFirstUncommittedEntry() {
+    public static String removeFirstUncommittedEntry() {
         try (BufferedReader bufferedReader = new BufferedReader(new FileReader(Const.ROOT_PATH + "persistence/uncommittedEntry.txt"))) {
             int num = removeTheFirstLine(BUFFER_FOR_UNCOMMITTED_ENTRY, bufferedReader.read(BUFFER_FOR_UNCOMMITTED_ENTRY));
             uncommittedEntryWriter = new BufferedWriter(new FileWriter(Const.ROOT_PATH + "persistence/uncommittedEntry.txt"));
             uncommittedEntryWriter.write(BUFFER_FOR_UNCOMMITTED_ENTRY, 0, num);
             uncommittedEntryWriter.flush();
+            return uncommittedEntries.poll();
         } catch (IOException e) {
             LOGGER.error(e.getMessage(), e);
         }
+        return null;
     }
 
 }

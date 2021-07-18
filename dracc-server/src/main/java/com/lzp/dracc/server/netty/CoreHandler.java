@@ -255,14 +255,13 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.EXCEPTION + Const
                     .CLUSTER_DOWN_MESSAGE).getBytes(UTF_8));
         } else {
-            boolean isRem = Command.REM.equals(command[3]);
             if (Const.ZERO.equals(command[2])) {
                 //service
                 if (Command.GET.equals(command[3])) {
                     channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + CommonUtil
                             .serial((Set<String>) RaftNode.data[0].get(command[4]))).getBytes(UTF_8));
                 } else {
-                    handleServiceWrite(isRem, command, channelHandlerContext);
+                    handleServiceWrite(command, channelHandlerContext);
                 }
             } else if (Const.ONE.equals(command[2])) {
                 //config
@@ -270,11 +269,11 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                     channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + CommonUtil
                             .serial((Set<String>) RaftNode.data[1].get(command[4]))).getBytes(UTF_8));
                 } else {
-                    handleConfigWrite(isRem, command, channelHandlerContext);
+                    handleConfigWrite(command, channelHandlerContext);
                 }
             } else {
                 //lock
-                handleLockWrite(isRem, command, channelHandlerContext);
+                handleLockWrite(command, channelHandlerContext);
             }
         }
     }
@@ -282,10 +281,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 处理写服务请求
      */
-    public static void handleServiceWrite(boolean isRem, String[] command, ChannelHandlerContext channelHandlerContext) {
+    public static void handleServiceWrite(String[] command, ChannelHandlerContext channelHandlerContext) {
         CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
         setLatchAndSendLogToSlaves(command, countDownLatch);
-        repilicationThreadPool.execute(() -> receiveResponseForSvsAndMakeDecision(countDownLatch, command, channelHandlerContext, isRem));
+        repilicationThreadPool.execute(() -> receiveResponseForSvsAndMakeDecision(countDownLatch, command, channelHandlerContext));
     }
 
 
@@ -309,20 +308,20 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 处理写配置请求
      */
-    public static void handleConfigWrite(boolean isRem, String[] command, ChannelHandlerContext channelHandlerContext) {
+    public static void handleConfigWrite(String[] command, ChannelHandlerContext channelHandlerContext) {
         CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
         setLatchAndSendLogToSlaves(command, countDownLatch);
-        repilicationThreadPool.execute(() -> receiveResponseForConfAndMakeDecision(countDownLatch, command, channelHandlerContext, isRem));
+        repilicationThreadPool.execute(() -> receiveResponseForConfAndMakeDecision(countDownLatch, command, channelHandlerContext));
     }
 
     /**
      * 处理获取释放锁请求
      */
-    public static void handleLockWrite(boolean isRem, String[] command, ChannelHandlerContext channelHandlerContext) {
+    public static void handleLockWrite(String[] command, ChannelHandlerContext channelHandlerContext) {
         CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
         command[5] = command[5] + Const.COLON + command[0];
         setLatchAndSendLogToSlaves(command, countDownLatch);
-        repilicationThreadPool.execute(() -> receiveResponseForLocAndMakeDecision(countDownLatch, command, channelHandlerContext, isRem));
+        repilicationThreadPool.execute(() -> receiveResponseForLocAndMakeDecision(countDownLatch, command, channelHandlerContext));
     }
 
 
@@ -330,7 +329,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 等待从节点的响应,并根据具体响应结果做出最终的决定
      */
     private static void receiveResponseForSvsAndMakeDecision(CountDownLatch countDownLatch, String[] command,
-                                                             ChannelHandlerContext channelHandlerContext, boolean isRem) {
+                                                             ChannelHandlerContext channelHandlerContext) {
         boolean halfAgree = false;
         try {
             halfAgree = countDownLatch.await(30, TimeUnit.SECONDS);
@@ -338,7 +337,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             LOGGER.error("interrupted when waitting for response from slaves", e);
         }
         if (halfAgree) {
-            NettyServer.workerGroup.execute(() -> commitServiceLogAndReturnResult(command, channelHandlerContext, isRem));
+            NettyServer.workerGroup.execute(() -> commitServiceLogAndReturnResult(command, channelHandlerContext));
         } else {
             //发送日志复制消息前有半数存活,发送日志复制消息时,却有连接断开了,或者是等待从节点响应过程中线程被中断了,
             // 防止数据不一致,重新选主
@@ -350,7 +349,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 等待从节点的响应,并根据具体响应结果做出最终的决定
      */
     private static void receiveResponseForConfAndMakeDecision(CountDownLatch countDownLatch, String[] command,
-                                                              ChannelHandlerContext channelHandlerContext, boolean isRem) {
+                                                              ChannelHandlerContext channelHandlerContext) {
         boolean halfAgree = false;
         try {
             halfAgree = countDownLatch.await(30, TimeUnit.SECONDS);
@@ -358,7 +357,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             LOGGER.error("interrupted when waitting for response from slaves", e);
         }
         if (halfAgree) {
-            NettyServer.workerGroup.execute(() -> commitConfigLogAndReturnResult(command, channelHandlerContext, isRem));
+            NettyServer.workerGroup.execute(() -> commitConfigLogAndReturnResult(command, channelHandlerContext));
         } else {
             //发送日志复制消息前有半数存活,发送日志复制消息时,却有连接断开了,或者是等待从节点响应过程中线程被中断了,
             // 防止数据不一致,重新选主
@@ -370,7 +369,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      * 等待从节点的响应,并根据具体响应结果做出最终的决定
      */
     private static void receiveResponseForLocAndMakeDecision(CountDownLatch countDownLatch, String[] command,
-                                                             ChannelHandlerContext channelHandlerContext, boolean isRem) {
+                                                             ChannelHandlerContext channelHandlerContext) {
         boolean halfAgree = false;
         try {
             halfAgree = countDownLatch.await(30, TimeUnit.SECONDS);
@@ -378,7 +377,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             LOGGER.error("interrupted when waitting for response from slaves", e);
         }
         if (halfAgree) {
-            NettyServer.workerGroup.execute(() -> commitLockLogAndReturnResult(command, channelHandlerContext, isRem));
+            NettyServer.workerGroup.execute(() -> commitLockLogAndReturnResult(command, channelHandlerContext));
         } else {
             //发送日志复制消息前有半数存活,发送日志复制消息时,却有连接断开了,或者是等待从节点响应过程中线程被中断了,
             // 防止数据不一致,重新选主
@@ -389,29 +388,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 提交写服务日志、更新状态机并返回客户端结果
      */
-    private static void commitServiceLogAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext, boolean isRem) {
-        LogService.commitFirstUncommittedLog();
-        Set<String> services;
-        boolean operSucceed = false;
-        if (isRem) {
-            if ((services = (Set<String>) RaftNode.data[0].get(command[4])) != null) {
-                //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。下面原因相同
-                synchronized (services) {
-                    operSucceed = services.remove(command[5]);
-                }
-                if (services.isEmpty()) {
-                    RaftNode.data[0].remove(command[4]);
-                }
-            }
-        } else {
-            if ((services = (Set<String>) RaftNode.data[0].get(command[4])) == null) {
-                services = new HashSet<>();
-                RaftNode.data[0].put(command[4], services);
-            }
-            synchronized (services) {
-                operSucceed = services.add(command[5]);
-            }
-        }
+    private static void commitServiceLogAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext) {
+        boolean operSucceed = LogService.commitFirstUncommittedLog();
         notifySlavesToCommitTheLog();
         //channelHandlerContext有可能为null(健康检查时删除服务会传null)。
         if (channelHandlerContext != null) {
@@ -438,34 +416,20 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 提交写配置日志、更新状态机并返回客户端结果(适用于写服务和写配置)
      */
-    private static void commitConfigLogAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext, boolean isRem) {
-        LogService.commitFirstUncommittedLog();
-        Set<String> configs;
-        if (isRem) {
-            if ((configs = (Set<String>) RaftNode.data[1].get(command[4])) != null) {
-                channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + configs.remove(command[5])).getBytes(UTF_8));
-            } else {
-                channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.FALSE).getBytes(UTF_8));
-            }
-        } else {
-            if ((configs = (Set<String>) RaftNode.data[1].get(command[4])) == null) {
-                configs = new HashSet<>();
-                RaftNode.data[1].put(command[4], configs);
-            }
-            channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + configs.add(command[5])).getBytes(UTF_8));
-        }
+    private static void commitConfigLogAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext) {
+        channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + LogService.commitFirstUncommittedLog()).getBytes(UTF_8));
         notifySlavesToCommitTheLog();
     }
 
     /**
      * 提交写锁日志、更新状态机并返回客户端结果(适用于写服务和写配置)
      */
-    private static void commitLockLogAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext, boolean isRem) {
-        LogService.commitFirstUncommittedLog();
-        if (isRem) {
-            releaseLock(command, channelHandlerContext);
+    private static void commitLockLogAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext) {
+        String specificOrder = LogService.removeFirstUncommittedEntry();
+        if (Command.REM.equals(command[2])) {
+            releaseLock(command, channelHandlerContext, specificOrder);
         } else {
-            acquireLock(command, channelHandlerContext);
+            acquireLock(command, channelHandlerContext, specificOrder);
         }
         notifySlavesToCommitTheLog();
     }
@@ -473,22 +437,25 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 获取分布式锁逻辑
      */
-    private static void acquireLock(String[] command, ChannelHandlerContext channelHandlerContext) {
+    private static void acquireLock(String[] command, ChannelHandlerContext channelHandlerContext,String specificOrder) {
         List<String> locks;
         int index;
         if ((locks = (List<String>) RaftNode.data[2].get(command[4])) == null) {
             locks = new LinkedList<>();
             RaftNode.data[2].put(command[4], locks);
             locks.add(command[5]);
+            LogService.appendCommittedLog(specificOrder);
             channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         } else if (locks.size() == 0) {
             synchronized (locks) {
                 //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。
                 locks.add(command[5]);
             }
+            LogService.appendCommittedLog(specificOrder);
             channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         } else if ((index = locks.indexOf(command[5])) == -1) {
             locks.add(command[5]);
+            LogService.appendCommittedLog(specificOrder);
         } else if (index == 0) {
             channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         }
@@ -498,7 +465,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 释放分布式锁逻辑
      */
-    private static void releaseLock(String[] command, ChannelHandlerContext channelHandlerContext) {
+    private static void releaseLock(String[] command, ChannelHandlerContext channelHandlerContext,String specificOrder) {
         try {
             LinkedList<String> locks;
             //只有当前持有锁才有释放锁的权力
@@ -506,6 +473,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
                 //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。
                 synchronized (locks) {
                     locks.removeFirst();
+                    LogService.appendCommittedLog(specificOrder);
                 }
                 channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
                 if (locks.size() > 0) {
