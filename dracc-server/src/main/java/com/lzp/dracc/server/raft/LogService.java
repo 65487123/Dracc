@@ -292,16 +292,12 @@ public class LogService {
      * @return 删除第一行记录后的总字符个数
      */
     private static int removeTheFirstLine(char[] chars, int numRead) {
-        int index = 0;
-        for (int i = 0; i < chars.length; i++) {
-            if (chars[i] == '\r' || chars[i] == '\n') {
-                index = i;
+        int beginIndex = 0;
+        for (int i = 6; i < chars.length; i++) {
+            if (chars[i] == '\n' || (chars[i] == '\r' && chars[i + 1] != '\n')) {
+                beginIndex = i + 1;
                 break;
             }
-        }
-        int beginIndex = index + 1;
-        if (chars[beginIndex] == '\n') {
-            beginIndex = index + 2;
         }
         int numMoved = numRead - beginIndex;
         System.arraycopy(chars, beginIndex, chars, 0, numMoved);

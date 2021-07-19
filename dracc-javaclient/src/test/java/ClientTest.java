@@ -14,7 +14,7 @@ import java.util.concurrent.*;
  */
 public class ClientTest {
     public static void main(String[] args) throws Exception {
-        DraccClient draccClient = new JDracc(3000, "127.0.0.1:6667", "127.0.0.1:6668", "127.0.0.1:6669");
+        DraccClient draccClient = new JDracc(3000, "10.240.70.166:6669", "10.240.70.166:6668", "10.240.70.166:6667");
 
         //功能测试
         //config
@@ -38,7 +38,7 @@ public class ClientTest {
         //检测服务健康检查
         Thread.sleep(20000);
         System.out.println(draccClient.getConfig("aaa"));
-        //由于注册的服务实例ip"125.2.0.1"是乱写的,会被检测到不可达然后删除.
+        //由于注册的服务实例ip都是乱写的,会被检测到不可达然后删除.
         System.out.println(draccClient.getAllInstances("serviceTest"));
 
         //lock
@@ -54,9 +54,10 @@ public class ClientTest {
         long beginTime = System.currentTimeMillis();
         for (int i = 0; i < 30; i++) {
             threadPool.execute(() -> {
+                String keyAndVal;
                 for (int j = 0; j < 1000; j++) {
                     try {
-                        draccClient.addConfig("1","1");
+                        draccClient.addConfig(keyAndVal = String.valueOf(j), keyAndVal);
                     } catch (DraccException ignored) {
                     }
                 }
@@ -74,7 +75,7 @@ public class ClientTest {
             threadPool.execute(() -> {
                 for (int j = 0; j < 1000; j++) {
                     try {
-                        draccClient.getConfig("1");
+                        draccClient.getConfig(String.valueOf(j));
                     } catch (DraccException ignored) {
                     }
                 }

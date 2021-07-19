@@ -296,6 +296,7 @@ public class JDracc implements DraccClient {
     private void subscribe0(String serviceName) throws DraccException {
         Thread currentThread;
         String threadName = (currentThread = Thread.currentThread()).getName();
+        //如果是代理ip,可能就会收不到通知了,所以通过本客户端去访问server端,最好不要走代理
         checkResult(sentRpcAndGetResult(threadName, currentThread, generateCommand(threadName, Const.ONE,
                 Command.ADD, serviceName, ((InetSocketAddress) channelToLeader.localAddress())
                         .getAddress().getHostAddress())));

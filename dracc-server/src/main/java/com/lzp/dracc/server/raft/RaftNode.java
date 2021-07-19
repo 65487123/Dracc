@@ -528,22 +528,22 @@ public class RaftNode {
     private static void startThreadForNoti() {
         THREAD_POOL_FOR_NOTI.execute(() -> {
             for (; ; ) {
-                if (role == Role.LEADER) {
-                    BlockingQueue<String> queue;
-                    String service;
-                    for (Map.Entry<String, List<Channel>> entry : IP_CHANNELS_WITH_CLIENT_MAP.entrySet()) {
-                        if (!entry.getValue().isEmpty()) {
-                            if ((queue = ALL_NOTIFICATION_TOBESENT.get(entry.getKey())) != null) {
-                                while ((service = queue.poll()) != null) {
-                                    sentNotification(entry.getValue().get(0), service);
+                try {
+                    if (role == Role.LEADER) {
+                        BlockingQueue<String> queue;
+                        String service;
+                        for (Map.Entry<String, List<Channel>> entry : IP_CHANNELS_WITH_CLIENT_MAP.entrySet()) {
+                            if (!entry.getValue().isEmpty()) {
+                                if ((queue = ALL_NOTIFICATION_TOBESENT.get(entry.getKey())) != null) {
+                                    while ((service = queue.poll()) != null) {
+                                        sentNotification(entry.getValue().get(0), service);
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                try {
-                    Thread.sleep(100);
-                } catch (InterruptedException ignored) {
+                    Thread.sleep(200);
+                } catch (Exception ignored) {
                 }
             }
         });
