@@ -536,7 +536,9 @@ public class RaftNode {
                             if (!entry.getValue().isEmpty()) {
                                 if ((queue = ALL_NOTIFICATION_TOBESENT.get(entry.getKey())) != null) {
                                     while ((service = queue.poll()) != null) {
-                                        sentNotification(entry.getValue().get(0), service);
+                                        for (Channel channel : entry.getValue()) {
+                                            sentNotification(channel, service);
+                                        }
                                     }
                                 }
                             }

@@ -42,7 +42,6 @@ import java.util.concurrent.locks.LockSupport;
 /**
  * Description:Dracc java客户端实现
  *
- *
  * @author: Zeping Lu
  * @date: 2021/3/24 19:48
  */
@@ -115,7 +114,7 @@ public class JDracc implements DraccClient {
     private void setUpChannelToLeader(String... ipAndPorts) throws InterruptedException, DraccException {
         CountDownLatch countDownLatch = new CountDownLatch(1);
         ExecutorService threadPool = new ThreadPoolExecutor(ipAndPorts.length, ipAndPorts.length, 0,
-                TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("find leader"));
+                TimeUnit.SECONDS, new LinkedBlockingQueue<>(), new ThreadFactoryImpl("find leader " + UUID.randomUUID()));
         for (String ipAndPort : ipAndPorts) {
             threadPool.execute(() -> findLeaderAndSetChannel(ipAndPort, countDownLatch));
         }
@@ -216,7 +215,6 @@ public class JDracc implements DraccClient {
                 + dataType + Const.COMMAND_SEPARATOR + operType + Const.COMMAND_SEPARATOR
                 + key + Const.COMMAND_SEPARATOR + value;
     }
-
 
 
     private String genCmdForGet(String commandId, String dataType, String key) {
@@ -373,12 +371,12 @@ public class JDracc implements DraccClient {
     @Override
     public void acquireDistributedLock(String lockName) {
         Thread currentThread;
-        String threadName = (currentThread = Thread.currentThread()).getName();
+        String commandId = JVM_PID + (currentThread = Thread.currentThread()).getName();
         try {
-            checkResult(sentRpcAndGetResult(JVM_PID + threadName, currentThread,
-                    generateCommand(threadName, Const.TWO, Command.ADD, lockName,
+            checkResult(sentRpcAndGetResult(commandId, currentThread,
+                    generateCommand(commandId, Const.TWO, Command.ADD, lockName,
                             ((InetSocketAddress) channelToLeader.localAddress())
-                                    .getAddress().getHostAddress()), TIMEOUT));
+                                    .getAddress().getHostAddress()), Integer.MAX_VALUE));
         } catch (DraccException e) {
             acquireDistributedLock(lockName);
         }
@@ -386,16 +384,16 @@ public class JDracc implements DraccClient {
 
 
     @Override
-    public void releaseDistributedlock(String lockName) throws DraccException {
+    public void releaseDistributedlock(String lockName) {
         Thread currentThread;
-        String threadName = (currentThread = Thread.currentThread()).getName();
+        String commandId = JVM_PID + (currentThread = Thread.currentThread()).getName();
         try {
-            checkResult(sentRpcAndGetResult(JVM_PID + threadName, currentThread,
-                    generateCommand(threadName, Const.TWO, Command.REM, lockName,
+            checkResult(sentRpcAndGetResult(commandId, currentThread,
+                    generateCommand(commandId, Const.TWO, Command.REM, lockName,
                             ((InetSocketAddress) channelToLeader.localAddress())
-                                    .getAddress().getHostAddress()), TIMEOUT));
+                                    .getAddress().getHostAddress()), Integer.MAX_VALUE));
         } catch (DraccException e) {
-            acquireDistributedLock(lockName);
+            releaseDistributedlock(lockName);
         }
     }
 

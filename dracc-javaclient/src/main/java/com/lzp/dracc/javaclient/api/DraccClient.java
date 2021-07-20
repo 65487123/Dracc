@@ -23,6 +23,7 @@ import java.util.List;
 
 /**
  * Description:Dracc客户端接口
+ * 建议一个jvm共用一个客户端,这样性能更高
  *
  * @author: Zeping Lu
  * @date: 2021/4/30 17:53
@@ -134,10 +135,10 @@ public interface DraccClient extends AutoCloseable {
      * 获取分布式锁
      * 同一个线程可以获取多次(可重入)
      *
+     *
      * @param lockName 锁名(唯一id)
-     * @throws DraccException exception
      */
-    void acquireDistributedLock(String lockName) throws DraccException;
+    void acquireDistributedLock(String lockName);
 
 
     /**
@@ -151,9 +152,8 @@ public interface DraccClient extends AutoCloseable {
      *
      * @param lockName 锁名(唯一id)
      * @return 当前锁被加锁次数。  如果释放的锁是根本不在加锁状态,返回-1
-     * @throws DraccException exception
      */
-    void releaseDistributedlock(String lockName) throws DraccException;
+    void releaseDistributedlock(String lockName);
 
 
     /**

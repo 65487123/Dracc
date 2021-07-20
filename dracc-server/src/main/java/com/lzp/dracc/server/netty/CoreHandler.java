@@ -254,7 +254,6 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     }
 
 
-
     /**
      * 处理客户端具体请求
      * 0：请求id  1:请求类型 2:服务、配置还是锁(0、1、2) 3:具体行为(add、get等) 4:key 5:value
@@ -416,7 +415,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 通知从节点提交日志
      */
-    private static void notifySlavesToCommitTheLog(){
+    private static void notifySlavesToCommitTheLog() {
         for (Channel channel : slaves) {
             channel.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + Const
                     .RPC_COMMIT + Const.COMMAND_SEPARATOR).getBytes(UTF_8));
@@ -436,7 +435,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private static void commitLockLogAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext) {
         String specificOrder = LogService.removeFirstUncommittedEntry();
-        if (Command.REM.equals(command[2])) {
+        if (Command.REM.equals(command[3])) {
             releaseLock(command, channelHandlerContext, specificOrder);
         } else {
             acquireLock(command, channelHandlerContext, specificOrder);
@@ -447,43 +446,40 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     /**
      * 获取分布式锁逻辑
      */
-    private static void acquireLock(String[] command, ChannelHandlerContext channelHandlerContext,String specificOrder) {
+    private static void acquireLock(String[] command, ChannelHandlerContext channelHandlerContext, String specificOrder) {
         List<String> locks;
         int index;
         if ((locks = (List<String>) RaftNode.data[2].get(command[4])) == null) {
             locks = new LinkedList<>();
             RaftNode.data[2].put(command[4], locks);
             locks.add(command[5]);
-            LogService.appendCommittedLog(specificOrder);
             channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         } else if (locks.size() == 0) {
             synchronized (locks) {
                 //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。
                 locks.add(command[5]);
             }
-            LogService.appendCommittedLog(specificOrder);
             channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         } else if ((index = locks.indexOf(command[5])) == -1) {
             locks.add(command[5]);
-            LogService.appendCommittedLog(specificOrder);
         } else if (index == 0) {
             channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         }
+        LogService.appendCommittedLog(specificOrder);
     }
 
 
     /**
      * 释放分布式锁逻辑
      */
-    private static void releaseLock(String[] command, ChannelHandlerContext channelHandlerContext,String specificOrder) {
+    private static void releaseLock(String[] command, ChannelHandlerContext channelHandlerContext, String specificOrder) {
         try {
             LinkedList<String> locks;
             //只有当前持有锁才有释放锁的权力
-            if ((locks = (LinkedList<String>) RaftNode.data[2].get(command[3])) != null && command[4].equals(locks.getFirst())) {
+            if ((locks = (LinkedList<String>) RaftNode.data[2].get(command[4])) != null && command[5].equals(locks.getFirst())) {
                 //这里加锁是为了防止健康检查的线程读数据时出问题。写的时候都是单线程的(IO线程)。
                 synchronized (locks) {
                     locks.removeFirst();
-                    LogService.appendCommittedLog(specificOrder);
                 }
                 channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
                 if (locks.size() > 0) {
@@ -495,6 +491,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         } catch (NullPointerException ignored) {
             //健康检查出持有锁的客户端已经失连了一段时间,释放这把锁时channelHandlerContext会传null,用try catch是为了不影响正常情况性能
         }
+        LogService.appendCommittedLog(specificOrder);
     }
 
     /**

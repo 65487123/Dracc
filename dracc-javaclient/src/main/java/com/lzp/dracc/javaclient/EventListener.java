@@ -23,7 +23,7 @@ public interface EventListener {
     /**
      * 监听的服务的实例发生变化会调用这个方法
      */
-    void onEvent(List<String> var1);
+    void onEvent(List<String> instances);
 
 
 }
