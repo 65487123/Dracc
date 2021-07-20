@@ -26,7 +26,6 @@ public class ClientTest {
         System.out.println(draccClient.getConfig("aaa"));
         draccClient.removeConfig("aaa", "3");
         System.out.println(draccClient.getConfig("aaa"));
-        System.out.println(draccClient.getConfig("serviceTest"));
 
         //service
         System.out.println(draccClient.registerInstance("serviceTest", "34.2.0.1", 8888));
