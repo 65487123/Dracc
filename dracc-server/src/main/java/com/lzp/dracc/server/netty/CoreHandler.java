@@ -130,26 +130,36 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         }
     }
 
-    private void handleGetRole(String[] command,ChannelHandlerContext channelHandlerContext) {
+    private void handleGetRole(String[] command, ChannelHandlerContext channelHandlerContext) {
         if (RaftNode.getRole() == Role.LEADER) {
             Channel channel = channelHandlerContext.channel();
-            String remoteIp = ((InetSocketAddress) channel.remoteAddress())
-                    .getAddress().getHostAddress();
+            List<String> allRemoteIp = CommonUtil.deserial(command[2]);
             List<Channel> channels;
-            if ((channels = RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.get(remoteIp)) == null) {
-                channels = new ConcurrentArrayList<>();
-                RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.put(remoteIp, channels);
+            if ((channels = RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.get(allRemoteIp.get(0))) == null) {
+                putIpsAndChannels(allRemoteIp, channels = new ConcurrentArrayList<>());
             }
             channels.add(channel);
             List<Channel> finalChannels = channels;
             channel.closeFuture().addListener(future -> {
                 finalChannels.remove(channel);
                 if (finalChannels.isEmpty()) {
-                    RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.remove(remoteIp);
+                    removeIps(allRemoteIp);
                 }
             });
         }
         channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + RaftNode.getRole().name()).getBytes(UTF_8));
+    }
+
+    private void putIpsAndChannels(List<String> ips, List<Channel> channels) {
+        for (String ip : ips) {
+            RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.put(ip, channels);
+        }
+    }
+
+    private void removeIps(List<String> ips) {
+        for (String ip : ips) {
+            RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.remove(ip);
+        }
     }
 
     /**

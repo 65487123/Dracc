@@ -31,9 +31,9 @@ public interface DraccClient extends AutoCloseable {
 
     /**
      * 注册一个服务实例
-     * 注意:
-     * 1、注册的服务实例要和客户端本机ip一致。
-     * 2、在关闭服务前不要close掉所有客户端。(至少要保证一个客户端存活,不然注册的实例会被标记为不健康并移除)
+     * 提醒:
+     * 1、注册的服务实例最好是客户端本机的其中一个ip。
+     * 2、在关闭服务前最好不要close掉所有客户端。(至少要保证一个客户端存活,不然注册的实例会被标记为不健康并移除)
      * 3、关闭服务时(释放server监听的端口)需要手动注销这个服务实例(实例会立即消失)或者关闭本机的所有客户端(实例会一段时间后消失)
      *
      * @param serviceName name of service
@@ -71,9 +71,10 @@ public interface DraccClient extends AutoCloseable {
     /**
      * 订阅服务以接收实例更改的事件
      * 注意：
-     * 1、监听器不会收到由本客户端修改而产生的事件,这样做是为了节省资源(本客户端对server端做的修改,
+     * 1、如果是代理ip,可能会收不到通知了,所以通过本客户端去访问server端,不要走代理
+     * 2、监听器不会收到由本客户端修改而产生的事件,这样做是为了节省资源(本客户端对server端做的修改,
      * 自己是知道的,server端没必要再向这个客户端发一次通知)
-     * 2、注册的监听器不会因为本客户端被关闭(close)而被清除,需要主动unsubscribe()
+     * 3、注册的监听器不会因为本客户端被关闭(close)而被清除,需要主动unsubscribe()
      *
      * @param serviceName 服务名
      * @param listener    事件监听器
@@ -90,6 +91,14 @@ public interface DraccClient extends AutoCloseable {
      * @throws DraccException exception
      */
     void unsubscribe(String serviceName, EventListener listener) throws DraccException;
+
+    /**
+     * 取消对某个服务的所有订阅
+     *
+     * @param serviceName 服务名 (唯一id)
+     * @throws DraccException exception
+     */
+    void unsubscribe(String serviceName) throws DraccException;
 
 
     /**

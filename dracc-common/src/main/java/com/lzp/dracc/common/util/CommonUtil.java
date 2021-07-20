@@ -33,21 +33,21 @@ public class CommonUtil {
      * 把Set<String>类型序列化成字符串,server端返回查询结果用
      */
     public static String serial(Set<String> set) {
-        if (set == null) {
+        if (set == null || set.isEmpty()) {
             return "";
         }
         StringBuilder stringBuilder = new StringBuilder(128);
         for (String element : set) {
-            stringBuilder.append(element).append(Const.COMMAND_SEPARATOR);
+            stringBuilder.append(element).append(Const.SEMICONLON);
         }
         return stringBuilder.deleteCharAt(stringBuilder.length() - 1).toString();
     }
 
     /**
-     * 字符串序列化成list,java客户端获取查询结果用
+     * 字符串反序列化成list
      */
     public static List<String> deserial(String elements) {
-        return Arrays.asList(elements.split("~"));
+        return Arrays.asList(elements.split(Const.SEMICONLON));
     }
 
 }

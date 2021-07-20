@@ -30,7 +30,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.management.ManagementFactory;
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
@@ -46,6 +49,11 @@ import java.util.concurrent.locks.LockSupport;
 public class JDracc implements DraccClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(JDracc.class);
+
+    /**
+     * 本机的所有ip,在第一次和server端建立连接时传过去,server端服务健康检查以及发通知会用
+     */
+    private static String allLocalIps;
 
     /**
      * jvm的进程号,用分布式锁时会用到
@@ -76,7 +84,9 @@ public class JDracc implements DraccClient {
 
     static {
         String jvmName;
-        JVM_PID = Long.parseLong((jvmName = ManagementFactory.getRuntimeMXBean().getName()).substring(0, jvmName.indexOf('@')));
+        JVM_PID = Long.parseLong((jvmName = ManagementFactory.getRuntimeMXBean()
+                .getName()).substring(0, jvmName.indexOf('@')));
+        allLocalIps = getAllIps();
     }
 
     /**
@@ -164,7 +174,8 @@ public class JDracc implements DraccClient {
         Thread thisThread = Thread.currentThread();
         ResultHandler.ThreadResultAndTime threadResultAndTime = new ResultHandler.ThreadResultAndTime(System.currentTimeMillis() + 5000, thisThread);
         ResultHandler.reqIdThreadMap.put(thisThread.getName(), threadResultAndTime);
-        channel.writeAndFlush((thisThread.getName() + Const.COMMAND_SEPARATOR + Const.RPC_GETROLE).getBytes(StandardCharsets.UTF_8));
+        channel.writeAndFlush((thisThread.getName() + Const.COMMAND_SEPARATOR + Const.RPC_GETROLE
+                + Const.COMMAND_SEPARATOR + allLocalIps).getBytes(StandardCharsets.UTF_8));
         String result;
         while ((result = threadResultAndTime.getResult()) == null) {
             LockSupport.park();
@@ -296,7 +307,6 @@ public class JDracc implements DraccClient {
     private void subscribe0(String serviceName) throws DraccException {
         Thread currentThread;
         String threadName = (currentThread = Thread.currentThread()).getName();
-        //如果是代理ip,可能就会收不到通知了,所以通过本客户端去访问server端,最好不要走代理
         checkResult(sentRpcAndGetResult(threadName, currentThread, generateCommand(threadName, Const.ONE,
                 Command.ADD, serviceName, ((InetSocketAddress) channelToLeader.localAddress())
                         .getAddress().getHostAddress())));
@@ -315,6 +325,19 @@ public class JDracc implements DraccClient {
                         Const.ONE, Command.REM, serviceName, ((InetSocketAddress) channelToLeader
                                 .localAddress()).getAddress().getHostAddress())));
             }
+        }
+    }
+
+    @Override
+    public void unsubscribe(String serviceName) throws DraccException {
+        Set<EventListener> eventListeners;
+        if ((eventListeners = ResultHandler.SERVICE_NAME_LISTENER_MAP.get(serviceName)) != null) {
+            eventListeners.clear();
+            Thread currentThread;
+            String threadName = (currentThread = Thread.currentThread()).getName();
+            checkResult(sentRpcAndGetResult(threadName, currentThread, generateCommand(threadName,
+                    Const.ONE, Command.REM, serviceName, ((InetSocketAddress) channelToLeader
+                            .localAddress()).getAddress().getHostAddress())));
         }
     }
 
@@ -422,4 +445,29 @@ public class JDracc implements DraccClient {
     }
 
 
+    private static String getAllIps() {
+        Set<String> allIps = new HashSet<>();
+        try {
+            Enumeration<NetworkInterface> allNetInterfaces = NetworkInterface.getNetworkInterfaces();
+            InetAddress ip;
+            String ifName;
+            while (allNetInterfaces.hasMoreElements()) {
+                NetworkInterface netInterface = allNetInterfaces.nextElement();
+                if (!netInterface.isLoopback() && !netInterface.isVirtual() && netInterface.isUp()
+                        && !(ifName = netInterface.getDisplayName()).contains(Const.DOCKER_NAME)
+                        && !ifName.contains(Const.K8S_NAME)) {
+                    Enumeration<InetAddress> addresses = netInterface.getInetAddresses();
+                    while (addresses.hasMoreElements()) {
+                        ip = addresses.nextElement();
+                        if (ip instanceof Inet4Address) {
+                            allIps.add(ip.getHostAddress());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("failed to find ip", e);
+        }
+        return CommonUtil.serial(allIps);
+    }
 }

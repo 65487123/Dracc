@@ -542,7 +542,7 @@ public class RaftNode {
                             }
                         }
                     }
-                    Thread.sleep(200);
+                    Thread.sleep(500);
                 } catch (Exception ignored) {
                 }
             }
@@ -568,17 +568,11 @@ public class RaftNode {
             for (String ip : ips) {
                 if (!ip.equals(excludedIp)) {
                     BlockingQueue<String> queue;
-                    if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) != null) {
-                        queue.offer(serviceName);
-                    } else {
-                        synchronized (ALL_NOTIFICATION_TOBESENT) {
-                            if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) == null) {
-                                queue = new LinkedBlockingQueue<>();
-                                ALL_NOTIFICATION_TOBESENT.put(ip, queue);
-                            }
-                            queue.offer(serviceName);
-                        }
+                    if ((queue = ALL_NOTIFICATION_TOBESENT.get(ip)) == null) {
+                        queue = new LinkedBlockingQueue<>();
+                        ALL_NOTIFICATION_TOBESENT.put(ip, queue);
                     }
+                    queue.offer(serviceName);
                 }
             }
         }

@@ -26,10 +26,13 @@ import com.lzp.dracc.common.util.PropertyUtil;
  * @date: 2021/3/17 16:26
  */
 public class Const {
+    public static final String DOCKER_NAME = "docker";
+    public static final String K8S_NAME = "flannel";
     public static final char COMMA = ',';
     public static final char COLON = ':';
     public static final String COPY_LOG_REQ = "cp_req";
     public static final String COPY_LOG_REPLY = "cp_reply";
+    public static final String SEMICONLON = ";";
     public static final char COMMAND_SEPARATOR = '~';
     public static final char SPECIFICORDER_SEPARATOR = '`';
     public static final String CLU_PRO = "cluster.properties";

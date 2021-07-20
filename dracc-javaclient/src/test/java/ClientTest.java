@@ -4,6 +4,7 @@ import com.lzp.dracc.javaclient.jdracc.JDracc;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.InetAddress;
 import java.util.concurrent.*;
 
 /**
@@ -14,7 +15,7 @@ import java.util.concurrent.*;
  */
 public class ClientTest {
     public static void main(String[] args) throws Exception {
-        DraccClient draccClient = new JDracc(3000, "10.240.70.166:6669", "10.240.70.166:6668", "10.240.70.166:6667");
+        DraccClient draccClient = new JDracc(3000, "10.240.70.180:6669", "10.240.70.180:6668", "10.240.70.180:6667");
 
         //功能测试
         //config
@@ -25,11 +26,12 @@ public class ClientTest {
         System.out.println(draccClient.getConfig("aaa"));
         draccClient.removeConfig("aaa", "3");
         System.out.println(draccClient.getConfig("aaa"));
+        System.out.println(draccClient.getConfig("serviceTest"));
 
         //service
         System.out.println(draccClient.registerInstance("serviceTest", "34.2.0.1", 8888));
         System.out.println(draccClient.registerInstance("serviceTest", "125.2.0.1", 8889));
-        System.out.println(draccClient.registerInstance("serviceTest", "127.0.0.1", 8889));
+        System.out.println(draccClient.registerInstance("serviceTest", InetAddress.getLocalHost().getHostAddress(), 8889));
         System.out.println(draccClient.getAllInstances("serviceTest"));
         System.out.println(draccClient.deregisterInstance("serviceTest", "34.2.0.1", 8888));
         System.out.println(draccClient.getAllInstances("serviceTest"));
@@ -38,9 +40,9 @@ public class ClientTest {
         //检测服务健康检查
         Thread.sleep(20000);
         System.out.println(draccClient.getConfig("aaa"));
-        //由于注册的服务实例ip都是乱写的,会被检测到不可达然后删除.
+        //由于注册的服务实例"125.2.0.1:8889"都是乱写的,会被检测到不可达然后删除.
         System.out.println(draccClient.getAllInstances("serviceTest"));
-
+        draccClient.unsubscribe("serviceTest");
         //lock
         //分布式锁测试应该用多台主机测试,我这里就开两个客户端模拟两台主机简单测试下
         //draccClient.
