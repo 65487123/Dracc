@@ -38,7 +38,7 @@ public class ClientTest {
         //事件监听
         draccClient.subscribe("serviceTest", instances -> System.out.println("监听到服务变动,变动后的服务实例列表为:" + instances));
         //检测服务健康检查
-        Thread.sleep(2000);
+        Thread.sleep(20000);
         System.out.println(draccClient.getConfig("aaa"));
         //由于注册的服务实例"125.2.0.1:8889"都是乱写的,会被检测到不可达然后删除.
         System.out.println(draccClient.getAllInstances("serviceTest"));
