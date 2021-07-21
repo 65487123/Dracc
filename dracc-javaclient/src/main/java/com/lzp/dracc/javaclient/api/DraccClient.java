@@ -134,9 +134,8 @@ public interface DraccClient extends AutoCloseable {
     /**
      * 获取分布式锁
      * 同一个线程可以获取多次(可重入)
-     *
-     *
      * @param lockName 锁名(唯一id)
+     *
      */
     void acquireDistributedLock(String lockName);
 
@@ -151,9 +150,9 @@ public interface DraccClient extends AutoCloseable {
      * 总而言之,如果server端计数,获取锁和释放锁就不是幂等操作了。
      *
      * @param lockName 锁名(唯一id)
-     * @return 当前锁被加锁次数。  如果释放的锁是根本不在加锁状态,返回-1
+     * @return 是否成功释放锁,如果是false,说明持有锁的对象早已不是自己了(拿到锁后网络闪断了40s以上时间)
      */
-    void releaseDistributedlock(String lockName);
+    boolean releaseDistributedlock(String lockName);
 
 
     /**

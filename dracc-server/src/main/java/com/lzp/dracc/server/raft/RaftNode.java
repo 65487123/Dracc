@@ -91,7 +91,7 @@ public class RaftNode {
     private static ExecutorService timeoutToElectionExecutor;
 
     /**
-     * 执行心跳任务的线程池
+     * 执行定时任务(心跳、服务健康检查、锁健康检查)的线程池
      */
     private static ScheduledExecutorService heartBeatAndHealthCheckExecutor;
 
@@ -101,7 +101,7 @@ public class RaftNode {
     private static ExecutorService reconnectionExecutor;
 
     /**
-     * 用来给客户端发送实例变更通知的线程池
+     * 用来给客户端发送通知的线程池
      */
     private static final ExecutorService THREAD_POOL_FOR_NOTI = new ThreadPoolExecutor(1, 1, 0
             , new LinkedBlockingQueue(), new ThreadFactoryImpl("send notice"));
@@ -152,10 +152,10 @@ public class RaftNode {
     public static Map<String, Object>[] data = new Map[3];
 
     /**
-     * 所有将要被发送的通知
-     * key是客户端ip,value是向这个ip发送通知任务(一个服务名对应一个任务)的队列
+     * 所有将要被发送的通知(服务监听和锁的功能会用到)
+     * key是客户端ip,value是向这个ip发送通知任务(一个服务名或者client端的请求id对应一个任务)的队列
      */
-    private static final Map<String, BlockingQueue<String>> ALL_NOTIFICATION_TOBESENT = new ConcurrentHashMap<>();
+    public static final Map<String, BlockingQueue<String>> ALL_NOTIFICATION_TOBESENT = new ConcurrentHashMap<>();
 
 
     static {
@@ -367,7 +367,7 @@ public class RaftNode {
                             lockName, lockHolder[0]}, null));
                 }
             }
-        }, 40, TimeUnit.SECONDS);
+        }, 30, TimeUnit.SECONDS);
     }
 
     /**
@@ -523,7 +523,7 @@ public class RaftNode {
     }
 
     /**
-     * 启动执行发通知任务以及健康检查的线程
+     * 启动执行发通知任务的线程
      */
     private static void startThreadForNoti() {
         THREAD_POOL_FOR_NOTI.execute(() -> {
@@ -531,24 +531,37 @@ public class RaftNode {
                 try {
                     if (role == Role.LEADER) {
                         BlockingQueue<String> queue;
-                        String service;
+                        String task;
                         for (Map.Entry<String, List<Channel>> entry : IP_CHANNELS_WITH_CLIENT_MAP.entrySet()) {
                             if (!entry.getValue().isEmpty()) {
                                 if ((queue = ALL_NOTIFICATION_TOBESENT.get(entry.getKey())) != null) {
-                                    while ((service = queue.poll()) != null) {
-                                        for (Channel channel : entry.getValue()) {
-                                            sentNotification(channel, service);
+                                    while ((task = queue.poll()) != null) {
+                                        if (task.startsWith("lockWaiter:")) {
+                                            for (Channel channel : entry.getValue()) {
+                                                wakeUpLockWaiter(channel, StringUtil.stringSplit(task, Const.COLON)[1]);
+                                            }
+                                        } else {
+                                            for (Channel channel : entry.getValue()) {
+                                                sentNotification(channel, task);
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                    Thread.sleep(500);
+                    Thread.sleep(100);
                 } catch (Exception ignored) {
                 }
             }
         });
+    }
+
+    /**
+     * 唤醒等待锁的客户端线程
+     */
+    private static void wakeUpLockWaiter(Channel channel, String commandId) {
+        channel.writeAndFlush((commandId + Const.COMMA + Const.TRUE).getBytes(UTF_8));
     }
 
     /**

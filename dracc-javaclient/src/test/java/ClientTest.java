@@ -46,7 +46,7 @@ public class ClientTest {
 
         //lock
         //分布式锁测试应该用多台主机测试,我这里就开两个客户端模拟两台主机简单测试下
-        ExecutorService threadPool = new ThreadPoolExecutor(2,2,0,TimeUnit.SECONDS,new LinkedBlockingQueue<>());
+        ExecutorService threadPool = new ThreadPoolExecutor(2, 2, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         threadPool.execute(() -> {
             DraccClient draccClient1 = null;
             try {
@@ -55,14 +55,14 @@ public class ClientTest {
                 e.printStackTrace();
             }
             draccClient1.acquireDistributedLock("testLock");
-            System.out.println(Thread.currentThread().getName()+"成功拿到分布式锁:"+ LocalTime.now());
+            System.out.println(Thread.currentThread().getName() + "成功拿到分布式锁:" + LocalTime.now());
             try {
                 Thread.sleep(10000);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            draccClient1.releaseDistributedlock("testLock");
-            System.out.println(Thread.currentThread().getName()+"释放分布式锁:"+ LocalTime.now());
+            System.out.println(draccClient1.releaseDistributedlock("testLock"));
+            System.out.println(Thread.currentThread().getName() + "释放分布式锁:" + LocalTime.now());
         });
         threadPool.execute(() -> {
             DraccClient draccClient1 = null;
@@ -72,17 +72,17 @@ public class ClientTest {
                 e.printStackTrace();
             }
             draccClient1.acquireDistributedLock("testLock");
-            System.out.println(Thread.currentThread().getName()+"成功拿到分布式锁:"+ LocalTime.now());
+            System.out.println(Thread.currentThread().getName() + "成功拿到分布式锁:" + LocalTime.now());
             try {
                 Thread.sleep(10000);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            draccClient1.releaseDistributedlock("testLock");
+            System.out.println(draccClient1.releaseDistributedlock("testLock"));
             System.out.println(Thread.currentThread().getName() + "释放分布式锁:" + LocalTime.now());
         });
         threadPool.shutdown();
-        threadPool.awaitTermination(10000,TimeUnit.SECONDS);
+        threadPool.awaitTermination(10000, TimeUnit.SECONDS);
 
         //性能测试
         //写配置性能

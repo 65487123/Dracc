@@ -26,6 +26,7 @@ import com.lzp.dracc.common.util.PropertyUtil;
  * @date: 2021/3/17 16:26
  */
 public class Const {
+    public static final long HUNDRED_YEARS = 3153600000000L;
     public static final String DOCKER_NAME = "docker";
     public static final String K8S_NAME = "flannel";
     public static final char COMMA = ',';
@@ -46,8 +47,8 @@ public class Const {
     public static final String RPC_SYNC_TERM = "syncTerm";
     public static final String RPC_TOBESLAVE = "tobeslave";
     public static final String YES = "yes";
-    public static final char FALSE = 'f';
-    public static final char TRUE = 't';
+    public static final String FALSE = "f";
+    public static final String TRUE = "t";
     public static final String F_TRUE = "true";
     public static final String EXCEPTION = "E";
     public static final String CLUSTER_DOWN_MESSAGE = "cluster is down";

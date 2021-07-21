@@ -373,10 +373,15 @@ public class JDracc implements DraccClient {
         Thread currentThread;
         String commandId = JVM_PID + (currentThread = Thread.currentThread()).getName();
         try {
-            checkResult(sentRpcAndGetResult(commandId, currentThread,
-                    generateCommand(commandId, Const.TWO, Command.ADD, lockName,
-                            ((InetSocketAddress) channelToLeader.localAddress())
-                                    .getAddress().getHostAddress()), Integer.MAX_VALUE));
+            if (Const.FALSE.equals(checkResult(sentRpcAndGetResult(commandId, currentThread,
+                    generateCommand(commandId, Const.TWO, Command.ADD, lockName, ((InetSocketAddress)
+                            channelToLeader.localAddress()).getAddress().getHostAddress()), TIMEOUT)))) {
+                //表明server端已经入队,阻塞等待就行
+                checkResult(sentRpcAndGetResult(commandId, currentThread,
+                        generateCommand(commandId, Const.TWO, Command.ADD, lockName,
+                                ((InetSocketAddress) channelToLeader.localAddress()).getAddress()
+                                        .getHostAddress()), Const.HUNDRED_YEARS));
+            }
         } catch (DraccException e) {
             acquireDistributedLock(lockName);
         }
@@ -384,16 +389,16 @@ public class JDracc implements DraccClient {
 
 
     @Override
-    public void releaseDistributedlock(String lockName) {
+    public boolean releaseDistributedlock(String lockName) {
         Thread currentThread;
         String commandId = JVM_PID + (currentThread = Thread.currentThread()).getName();
         try {
-            checkResult(sentRpcAndGetResult(commandId, currentThread,
+            return Const.TRUE.equals(checkResult(sentRpcAndGetResult(commandId, currentThread,
                     generateCommand(commandId, Const.TWO, Command.REM, lockName,
                             ((InetSocketAddress) channelToLeader.localAddress())
-                                    .getAddress().getHostAddress()), Integer.MAX_VALUE));
+                                    .getAddress().getHostAddress()), TIMEOUT)));
         } catch (DraccException e) {
-            releaseDistributedlock(lockName);
+            return releaseDistributedlock(lockName);
         }
     }
 

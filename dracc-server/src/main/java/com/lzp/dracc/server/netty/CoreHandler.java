@@ -462,6 +462,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         } else if ((index = locks.indexOf(command[5])) == -1) {
             locks.add(command[5]);
+            channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.FALSE).getBytes(UTF_8));
         } else if (index == 0) {
             channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
         }
@@ -499,9 +500,12 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
      */
     private static void wakeUpWaiter(String waiter) {
         String[] ipAndCommandId = StringUtil.stringSplit(waiter, Const.COLON);
-        for (Channel channel : RaftNode.IP_CHANNELS_WITH_CLIENT_MAP.get(ipAndCommandId[0])) {
-            channel.writeAndFlush((ipAndCommandId[1] + Const.COMMA + Const.TRUE).getBytes(UTF_8));
+        BlockingQueue<String> queue;
+        if ((queue = RaftNode.ALL_NOTIFICATION_TOBESENT.get(ipAndCommandId[0])) == null) {
+            queue = new LinkedBlockingQueue<>();
+            RaftNode.ALL_NOTIFICATION_TOBESENT.put(ipAndCommandId[0], queue);
         }
+        queue.offer("lockWaiter:" + ipAndCommandId[1]);
     }
 
 
