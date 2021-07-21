@@ -456,7 +456,7 @@ public class JDracc implements DraccClient {
             String ifName;
             while (allNetInterfaces.hasMoreElements()) {
                 NetworkInterface netInterface = allNetInterfaces.nextElement();
-                if (!netInterface.isLoopback() && !netInterface.isVirtual() && netInterface.isUp()
+                if (!netInterface.isVirtual() && netInterface.isUp()
                         && !(ifName = netInterface.getDisplayName()).contains(Const.DOCKER_NAME)
                         && !ifName.contains(Const.K8S_NAME)) {
                     Enumeration<InetAddress> addresses = netInterface.getInetAddresses();

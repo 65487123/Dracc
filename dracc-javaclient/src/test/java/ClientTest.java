@@ -16,7 +16,7 @@ import java.util.concurrent.*;
  */
 public class ClientTest {
     public static void main(String[] args) throws Exception {
-        DraccClient draccClient = new JDracc(3000, "10.240.70.180:6669", "10.240.70.180:6668", "10.240.70.180:6667");
+        DraccClient draccClient = new JDracc(3000, "127.0.0.1:6669", "127.0.0.1:6668", "127.0.0.1:6667");
 
         //功能测试
         //config
@@ -40,7 +40,7 @@ public class ClientTest {
         //检测服务健康检查
         Thread.sleep(20000);
         System.out.println(draccClient.getConfig("aaa"));
-        //由于注册的服务实例"125.2.0.1:8889"都是乱写的,会被检测到不可达然后删除.
+        //由于注册的服务实例"125.2.0.1:8889"是乱写的,会被检测到不可达然后删除.
         System.out.println(draccClient.getAllInstances("serviceTest"));
         draccClient.unsubscribe("serviceTest");
 
@@ -50,7 +50,7 @@ public class ClientTest {
         threadPool.execute(() -> {
             DraccClient draccClient1 = null;
             try {
-                draccClient1 = new JDracc(3000, "10.240.70.180:6669", "10.240.70.180:6668", "10.240.70.180:6667");
+                draccClient1 = new JDracc(3000, "127.0.0.1:6669", "127.0.0.1:6668", "127.0.0.1:6667");
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -61,13 +61,13 @@ public class ClientTest {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            System.out.println(draccClient1.releaseDistributedlock("testLock"));
+            draccClient1.releaseDistributedlock("testLock");
             System.out.println(Thread.currentThread().getName() + "释放分布式锁:" + LocalTime.now());
         });
         threadPool.execute(() -> {
             DraccClient draccClient1 = null;
             try {
-                draccClient1 = new JDracc(3000, "10.240.70.180:6669", "10.240.70.180:6668", "10.240.70.180:6667");
+                draccClient1 = new JDracc(3000, "127.0.0.1:6669", "127.0.0.1:6668", "127.0.0.1:6667");
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -78,7 +78,7 @@ public class ClientTest {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            System.out.println(draccClient1.releaseDistributedlock("testLock"));
+            draccClient1.releaseDistributedlock("testLock");
             System.out.println(Thread.currentThread().getName() + "释放分布式锁:" + LocalTime.now());
         });
         threadPool.shutdown();
