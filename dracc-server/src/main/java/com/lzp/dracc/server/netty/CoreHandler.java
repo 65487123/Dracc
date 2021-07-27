@@ -79,10 +79,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     }
 
     static {
-        repilicationThreadPool = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<>(1000),
+        repilicationThreadPool = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<>(5000),
                 new ThreadFactoryImpl("replication thread"), (r, executor) -> {
             try {
-                Thread.sleep(100);
+                Thread.sleep(10);
             } catch (InterruptedException ignored) {
             }
             executor.execute(r);
@@ -91,10 +91,10 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
 
     public static void resetReplicationThreadPool() {
         repilicationThreadPool.shutdownNow();
-        repilicationThreadPool = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<Runnable>(1000),
+        repilicationThreadPool = new ThreadPoolExecutor(1, 1, 0, new ArrayBlockingQueue<Runnable>(5000),
                 new ThreadFactoryImpl("replication thread"), (r, executor) -> {
             try {
-                Thread.sleep(100);
+                Thread.sleep(10);
             } catch (InterruptedException ignored) {
             }
             executor.execute(r);
@@ -423,7 +423,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     }
 
     /**
-     * 提交写配置日志、更新状态机并返回客户端结果(适用于写服务和写配置)
+     * 提交写配置日志、更新状态机并返回客户端结果
      */
     private static void commitConfigLogAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext) {
         channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + LogService.commitFirstUncommittedLog()).getBytes(UTF_8));
@@ -431,7 +431,7 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
     }
 
     /**
-     * 提交写锁日志、更新状态机并返回客户端结果(适用于写服务和写配置)
+     * 提交写锁日志、更新状态机并返回客户端结果
      */
     private static void commitLockLogAndReturnResult(String[] command, ChannelHandlerContext channelHandlerContext) {
         String specificOrder = LogService.removeFirstUncommittedEntry();

@@ -86,7 +86,7 @@ public class ClientTest {
 
         //性能测试
         //写配置性能
-        //模拟开30个客户端并发写配置,每个客户端写1000条配置,测总共耗时(这里只是很简单地测试,但也可以看出大致的性能水平)
+        //模拟开30个客户端并发写配置,每个客户端写1000条配置,测总共耗时(这里只是很简单地测试,并且也没有提前预热,但也可以看出大致的性能水平)
         System.out.println("开始性能测试");
         threadPool = new ThreadPoolExecutor(30, 30, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         long beginTime = System.currentTimeMillis();
