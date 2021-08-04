@@ -20,7 +20,8 @@ import com.lzp.dracc.server.raft.RaftNode;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Description:后续可能会增加个前端界面,所以这里引入了springboot.(springboot内置servlet容器,启动后可以给前端提供接口)
+ * Description:后续可能会增加个前端界面,所以这里引入了springboot.(springboot内置servlet容器,启动后可以给前端提供接口,
+ * 或者直接在容器根目录把前端html界面返回给浏览器,html和server直接通过websocket通信)
  *
  * 现在springboot的作用就是把工程及其所依赖的库打成一个jar包,并且使得执行java -jar时候能进到这里(打包时会写meta-inf/MANIFEST.MF)
  * 其实通过在pom.xml引入下面插件也能实现
