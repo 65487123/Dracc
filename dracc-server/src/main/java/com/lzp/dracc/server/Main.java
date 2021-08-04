@@ -20,7 +20,31 @@ import com.lzp.dracc.server.raft.RaftNode;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Description:
+ * Description:后续可能会增加个前端界面,所以这里引入了springboot.(springboot内置servlet容器,启动后可以给前端提供接口)
+ *
+ * 现在springboot的作用就是把工程及其所依赖的库打成一个jar包,并且使得执行java -jar时候能进到这里(打包时会写meta-inf/MANIFEST.MF)
+ * 其实通过在pom.xml引入下面插件也能实现
+ * <plugin>
+ *     <artifactId>maven-assembly-plugin</artifactId>
+ *         <executions>
+ *             <execution>
+ *                 <phase>package</phase>
+ *                 <goals>
+ *                      <goal>single</goal>
+ *                 </goals>
+ *             </execution>
+ *        </executions>
+ *        <configuration>
+ *            <descriptorRefs>
+ *                <descriptorRef>jar-with-dependencies</descriptorRef>
+ *            </descriptorRefs>
+ *            <archive>
+ *                <manifest>
+ *                    <mainClass>com.utstar.msbtest.testsercer.Main</mainClass>
+ *                </manifest>
+ *            </archive>
+ *       </configuration>
+ * </plugin>
  *
  * @author: Zeping Lu
  * @date: 2021/2/15 13:17
