@@ -41,7 +41,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  *            </descriptorRefs>
  *            <archive>
  *                <manifest>
- *                    <mainClass>com.utstar.msbtest.testsercer.Main</mainClass>
+ *                    <mainClass>com.lzp.dracc.server.Main</mainClass>
  *                </manifest>
  *            </archive>
  *       </configuration>
