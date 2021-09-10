@@ -310,25 +310,30 @@ public class RaftNode {
             synchronized (instances = (Set<String>) serviceAndInstances.getValue()) {
                 for (String instance : instances) {
                     if (!isAlive(instance)) {
-                    /*
-                    当检查出存活的客户端中没有这个服务实例时会进到这里,执行下面这段代码:把删除服务实例的任务
-                    丢进netty的io线程中执行(接收客户端业务请求的线程,单线程设计的)。
-                    这段代码(判断完到把任务加入到线程池)是不能被中断的,纯cpu计算执行速度非常快。
-                    如果刚进入到这里,客户端就已经重连上并且server端已经把客户端的连接加入到容器中
-                    然后返回给客户端连接成功消息,客户端收到消息后马上重新把服务注册了一遍。这也不会
-                    出现乱序。因为这个过程至少得经历一个RTT(Round-Trip Time)
-                    所以,没必要加锁
-                    */
-                    /*
-                    当执行NioEventLoopGroup().execute(),netty底层最终会调用到NioEventLoop的
-                    execute(),把任务塞进他的任务队列中。NioEventLoop在select()前会判断一次队列中
-                    是否有任务,如果有任务会selectNow()然后先处理已就绪的io请求再执行这个任务。如果
-                    NioEventLoop已经在阻塞select()了,会唤醒他并执行任务(如果execute()的runnable
-                    实现了NonWakeupRunnable,则不会唤醒)
-                    */
-                        NettyServer.workerGroup.execute(() -> CoreHandler.handleServiceWrite(
-                                generCommandForDelService(Thread.currentThread().getName() + serviceAndInstances
-                                        .getKey() + instance, serviceAndInstances.getKey(), instance), null));
+                        /*当检查出存活的客户端中没有这个服务实例时会进到这里,执行下面这段代码:把删除服务实例的任务
+                        丢进netty的io线程中执行(接收客户端业务请求的线程,单线程设计的)。
+                        */
+                        /*
+                        当执行NioEventLoopGroup().execute(),netty底层最终会调用到NioEventLoop的
+                        execute(),把任务塞进他的任务队列中。NioEventLoop在select()前会判断一次队列中
+                        是否有任务,如果有任务会selectNow()然后先处理已就绪的io请求再执行这个任务。如果
+                        NioEventLoop已经在阻塞select()了,会唤醒他并执行任务(如果execute()的runnable
+                        实现了NonWakeupRunnable,则不会唤醒)
+                        */
+                        NettyServer.workerGroup.execute(() -> {
+                            /*
+                            如果刚进入到这里,客户端就已经重连上并且server端已经把客户端的连接加入到容器中
+                            然后返回给客户端连接成功消息,客户端收到消息后马上重新把服务注册了一遍。
+                            那么这里执行删除逻辑可能会有问题,所以这里再加一次判断。(但实际基本是不可能出现这种
+                            情况的,因为从第一次判断到execute()方法执行完都是纯cpu计算,不能被中断的。而上面说的那
+                            种情况至少得经历一个RTT(Round-Trip Time))
+                            */
+                            if (!isAlive(instance)) {
+                                CoreHandler.handleServiceWrite(generCommandForDelService(Thread.currentThread()
+                                        .getName() + serviceAndInstances.getKey() + instance, serviceAndInstances
+                                        .getKey(), instance), null);
+                            }
+                        });
                     }
                 }
             }
