@@ -58,6 +58,7 @@ public class Const {
     public static final String ONE = "1";
     public static final String TWO = "2";
     public static final String UUID = java.util.UUID.randomUUID().toString();
+    public static final String NOOP = "noop";
 
     static {
         String path = PropertyUtil.class.getProtectionDomain().getCodeSource().getLocation().getPath();

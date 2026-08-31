@@ -121,8 +121,8 @@ public class JDracc implements DraccClient {
         try {
             if (countDownLatch.await(5, TimeUnit.SECONDS)) {
                 synchronized (JDracc.class) {
-                    HeartbeatWorker.executeHeartBeat(channelToLeader.closeFuture()
-                            .addListener(future -> onChannelClosed(ipAndPorts)).channel());
+                    channelToLeader.closeFuture()
+                            .addListener(future -> onChannelClosed(ipAndPorts)).channel();
                 }
             } else {
                 throw new DraccException("can not find leader");
@@ -134,7 +134,6 @@ public class JDracc implements DraccClient {
 
 
     private void onChannelClosed(String... ipAndPorts) {
-        HeartbeatWorker.stopHeartBeat(channelToLeader);
         if (resetChannelIfNecessary(ipAndPorts)) {
             try {
                 for (Map.Entry<String, Set<String>> entry : REGISTERED_INSTANCES.entrySet()) {

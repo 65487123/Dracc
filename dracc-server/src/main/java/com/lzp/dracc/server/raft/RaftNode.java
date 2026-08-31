@@ -33,7 +33,6 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.converter.json.GsonBuilderUtils;
 
 import java.net.InetSocketAddress;
 import java.util.*;
@@ -91,9 +90,9 @@ public class RaftNode {
     private static ExecutorService timeoutToElectionExecutor;
 
     /**
-     * 执行定时任务(心跳、服务健康检查、锁健康检查)的线程池
+     * 执行定时任务(服务健康检查、锁健康检查)的线程池
      */
-    private static ScheduledExecutorService heartBeatAndHealthCheckExecutor;
+    private static ScheduledExecutorService healthCheckExecutor;
 
     /**
      * 执行重连任务的线程池
@@ -263,42 +262,29 @@ public class RaftNode {
      * 升级成主节点
      */
     private static void upgradToLeader(String term) {
-        LOGGER.info("successful election, upgrade to the master node");
-        role = Role.LEADER;
         CoreHandler.slaves = TERM_AND_SLAVECHANNELS.get(term);
-        heartBeatAndHealthCheckExecutor = new ScheduledThreadPoolExecutor(3
-                , new ThreadFactoryImpl("heartbeatAndHealthCheck"));
-        heartBeatAndHealthCheckExecutor.scheduleWithFixedDelay(RaftNode::heartbeatToSlaves, 5, 5, TimeUnit.SECONDS);
-        heartBeatAndHealthCheckExecutor.scheduleWithFixedDelay(RaftNode::performServiceHealthCheck, 5, 20, TimeUnit.SECONDS);
-        heartBeatAndHealthCheckExecutor.scheduleWithFixedDelay(RaftNode::performLockHealthCheck, 5, 40, TimeUnit.SECONDS);
+        healthCheckExecutor = new ScheduledThreadPoolExecutor(2
+                , new ThreadFactoryImpl("healthCheck"));
+        healthCheckExecutor.scheduleWithFixedDelay(RaftNode::performServiceHealthCheck, 5, 20, TimeUnit.SECONDS);
+        healthCheckExecutor.scheduleWithFixedDelay(RaftNode::performLockHealthCheck, 5, 40, TimeUnit.SECONDS);
         //放到io线程中执行是为了保证单线程模型
         NettyServer.workerGroup.execute(() -> {
-            LogService.commitAllUncommittedLog();
-            //防止原主挂了导致通知任务丢失,选举出新主后重新向所有已注册监听的客户端发送一遍监听的服务内容通知
-            sentNotifications();
+            CoreHandler.sendNoOpWrite();
         });
+        LOGGER.info("successful election, upgrade to the master node");
+        role = Role.LEADER;
     }
 
 
     /**
      * 向所有已注册监听的客户端发送一遍监听的服务内容通知
      */
-    private static void sentNotifications() {
+    public static void sentNotifications() {
         for (String service : data[0].keySet()) {
             notifyListeners(service, "");
         }
     }
 
-
-    /**
-     * 向从节点发心跳
-     */
-    private static void heartbeatToSlaves() {
-        byte[] emptyPackage = new byte[0];
-        for (Channel channel : CoreHandler.slaves) {
-            channel.writeAndFlush(emptyPackage);
-        }
-    }
 
 
     /**
@@ -414,6 +400,7 @@ public class RaftNode {
             }
         }
         role = Role.FOLLOWER;
+        CoreHandler.slaves = null;
         clearChannelsWithClient();
         shutdownHeartbeatExecutor();
         CoreHandler.resetReplicationThreadPool();
@@ -431,8 +418,8 @@ public class RaftNode {
      * 关闭执行心跳任务的线程池
      */
     private static void shutdownHeartbeatExecutor() {
-        if (heartBeatAndHealthCheckExecutor != null) {
-            heartBeatAndHealthCheckExecutor.shutdownNow();
+        if (healthCheckExecutor != null) {
+            healthCheckExecutor.shutdownNow();
         }
     }
 
@@ -500,7 +487,7 @@ public class RaftNode {
      */
     public static void resetTimer() {
         ELECTION_TASK.deadline = System.currentTimeMillis() + ThreadLocalRandom.current()
-                .nextInt(9500, 28500);
+                .nextInt(19000, 57000);
     }
 
 

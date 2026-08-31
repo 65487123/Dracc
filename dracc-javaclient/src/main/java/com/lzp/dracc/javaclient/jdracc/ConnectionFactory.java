@@ -46,7 +46,7 @@ public class ConnectionFactory implements AutoCloseable {
         bootstrap.group(workerGroup).channel(NioSocketChannel.class).handler(new ChannelInitializer() {
             @Override
             protected void initChannel(Channel channel) {
-                channel.pipeline().addLast(new IdleStateHandler(12, Integer.MAX_VALUE, Integer.MAX_VALUE))
+                channel.pipeline().addLast(new IdleStateHandler(15, 5, 0))
                         .addLast(new MessageDecoder()).addLast(new LzpMessageEncoder())
                         .addLast("resultHandler", new ResultHandler());
             }

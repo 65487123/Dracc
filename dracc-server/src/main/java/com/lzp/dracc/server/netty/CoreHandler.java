@@ -124,6 +124,8 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             voteIfAppropriate(channelHandlerContext, command);
         } else if (Const.RPC_GETROLE.equals(command[1])) {
             handleGetRole(command, channelHandlerContext);
+        } else if (Const.NOOP.equals(command[1])) {
+            handleNoOpWrite(command, channelHandlerContext);
         } else {
             //Const.COPY_LOG_REPLY.equals(command[1])
             syncLogAndStateMachine(command);
@@ -215,10 +217,14 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
             while (!logMustBeConsistent) {
                 try {
                     this.wait();
-                } catch (InterruptedException ignored) {
+                } catch (InterruptedException e) {
+                    // 连接断开或线程池关闭，退出等待，不再回复 YES
+                    Thread.currentThread().interrupt();
+                    return;
                 }
             }
         }
+        //由于IO线程是单线程设计,在主节点生成同步数据之前收到的客户端写请求已经包含在同步数据里了,而在同步数据生成之后收到的客户端请求,最终不会走到这里,所以这里直接放回成功就行。
         channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.YES).getBytes(UTF_8));
     }
 
@@ -313,6 +319,18 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         }
     }
 
+    /**
+     * 把计数器放进容器,然后往从节点发送具体的命令日志
+     */
+    private static void setLatchAndSendNoopLogToSlaves(String commandId, CountDownLatch countDownLatch) {
+        RaftNode.cidAndResultMap.put(commandId, countDownLatch);
+        for (Channel channel : slaves) {
+            channel.writeAndFlush((commandId + Const.COMMAND_SEPARATOR + Const.NOOP + Const
+                    .COMMAND_SEPARATOR +  LogService.getCommittedLogIndex()
+                    + Const.COMMAND_SEPARATOR + LogService.getUncommittedLogSize()).getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
 
     /**
      * 处理写配置请求
@@ -333,6 +351,55 @@ public class CoreHandler extends SimpleChannelInboundHandler<byte[]> {
         repilicationThreadPool.execute(() -> receiveResponseForLocAndMakeDecision(countDownLatch, command, channelHandlerContext));
     }
 
+
+    private void handleNoOpWrite(String[] command,ChannelHandlerContext channelHandlerContext) {
+        if (Long.parseLong(command[2]) == LogService.getCommittedLogIndex() && Long
+                .parseLong(command[3]) == LogService.getUncommittedLogSize()) {
+            logMustBeConsistent = true;
+            channelHandlerContext.writeAndFlush((command[0] + Const.COMMA + Const.YES).getBytes(UTF_8));
+        } else {
+            SINGLE_THREAD_POOL.execute(() -> waitUntilSyncThenReturnYes(command, channelHandlerContext));
+        }
+    }
+
+
+    /**
+     * 专门用于新 Leader 上任时提交所有旧未提交日志的 No-Op 写请求。
+     * 该方法不会被正常客户端请求调用，只在 RaftNode.upgradToLeader 中使用。
+     */
+    public static void sendNoOpWrite() {
+        // 创建 CountDownLatch 并发送日志
+        CountDownLatch countDownLatch = new CountDownLatch(RaftNode.HALF_COUNT);
+        setLatchAndSendNoopLogToSlaves(UUID.randomUUID().toString(), countDownLatch);
+
+        // 异步等待响应并执行批量提交
+        repilicationThreadPool.execute(() -> receiveResponseForNoOpAndCommitAll(countDownLatch, LogService.getUncommittedLogSize()));
+    }
+
+    /**
+     * No-Op 请求的响应处理：收到多数确认后，批量提交所有未提交日志（包括 No-Op 及之前的旧日志）。
+     */
+    private static void receiveResponseForNoOpAndCommitAll(CountDownLatch countDownLatch, int uncommittedLogSize) {
+        boolean halfAgree = false;
+        try {
+            halfAgree = countDownLatch.await(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            LOGGER.error("interrupted when waiting for No-Op responses", e);
+        }
+
+        if (halfAgree) {
+            // 提交所有未提交日志，并通知从节点逐条提交
+            for (int i = 0; i < uncommittedLogSize; i++) {
+                LogService.commitFirstUncommittedLog();
+                notifySlavesToCommitTheLog();
+            }
+            //防止原主挂了导致通知任务丢失,选举出新主后重新向所有已注册监听的客户端发送一遍监听的服务内容通知
+            RaftNode.sentNotifications();
+        } else {
+            // 未获得多数确认，降级为 Follower，等待下次选举
+            NettyServer.workerGroup.execute(() -> RaftNode.downgradeToSlaveNode(false, RaftNode.term));
+        }
+    }
 
     /**
      * 等待从节点的响应,并根据具体响应结果做出最终的决定

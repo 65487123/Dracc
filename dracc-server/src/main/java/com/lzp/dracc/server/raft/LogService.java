@@ -1,4 +1,3 @@
-
 /* Copyright zeping lu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -68,7 +67,8 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 public class LogService {
     private static final Logger LOGGER = LoggerFactory.getLogger(LogService.class);
 
-
+    private static FileOutputStream committedFos;
+    private static FileOutputStream uncommittedFos;
     private static BufferedWriter committedEntryWriter;
     private static BufferedWriter uncommittedEntryWriter;
     private static long committedIndex;
@@ -79,18 +79,27 @@ public class LogService {
     static {
         SNAPSHOT_BATCH_COUNT = Integer.parseInt(PropertyUtil.getProperties(Const.PERSI_PRO).getProperty(Const.SNAPSHOT_BATCH_COUNT, "200000"));
         try {
-            committedEntryWriter = new BufferedWriter(new FileWriter(Const.ROOT_PATH + "persistence/committedEntry.txt", true));
-            uncommittedEntryWriter = new BufferedWriter(new FileWriter(Const.ROOT_PATH + "persistence/uncommittedEntry.txt", true));
+            committedFos = new FileOutputStream(Const.ROOT_PATH + "persistence/committedEntry.txt", true);
+            committedEntryWriter = new BufferedWriter(new OutputStreamWriter(committedFos, UTF_8));
+            uncommittedFos = new FileOutputStream(Const.ROOT_PATH + "persistence/uncommittedEntry.txt", true);
+            uncommittedEntryWriter = new BufferedWriter(new OutputStreamWriter(uncommittedFos, UTF_8));
             //不用ConcurrentLinkedQueue是因为它的size()方法效率太低
             uncommittedEntries = new ArrayBlockingQueue<>(1000);
             restoreCommittedIndex();
             restoreUncommittedEntry();
             restoreStateMachine();
         } catch (Exception e) {
-            LOGGER.error("failed to restore persistent data (if there is no persistent data, it is normal)");
+            LOGGER.error("failed to restore persistent data (if there is no persistent data, it is normal)", e);
         }
     }
 
+    /**
+     * 处理致命错误：记录日志并立即终止 JVM
+     */
+    private static void fatalError(String message, Throwable e) {
+        LOGGER.error("FATAL: {} Terminating JVM.", message, e);
+        Runtime.getRuntime().halt(1);
+    }
 
     /**
      * 添加未提交的日志条目,并返回添加后未提交的日志条目总数
@@ -100,24 +109,35 @@ public class LogService {
             uncommittedEntryWriter.write(command);
             uncommittedEntryWriter.newLine();
             uncommittedEntryWriter.flush();
+            uncommittedFos.getFD().sync();
+            uncommittedEntries.offer(command);
+            return uncommittedEntries.size();
         } catch (IOException e) {
-            LOGGER.error(e.getMessage(), e);
+            fatalError("Failed to append uncommitted log to disk.", e);
+            return -1;
         }
-        uncommittedEntries.offer(command);
-        return uncommittedEntries.size();
     }
 
     /**
      * 生成快照文件并清空日志文件
      */
     public static void generateSnapshotAndClearJournal(Data data) {
-        try (BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(new FileOutputStream("./persistence/snapshot.snp"))) {
+        try (FileOutputStream snapshotFos = new FileOutputStream(Const.ROOT_PATH + "persistence/snapshot.snp")) {
+            BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(snapshotFos);
             bufferedOutputStream.write(DataSearialUtil.serialize(data));
             bufferedOutputStream.flush();
+            snapshotFos.getFD().sync();
+            bufferedOutputStream.close();
+
+            // 关闭旧的 committed writer 和 fos
             committedEntryWriter.close();
-            committedEntryWriter = new BufferedWriter(new FileWriter(Const.ROOT_PATH + "persistence/committedEntry.txt"));
+            committedFos.close();
+
+            // 重新以覆盖模式打开 committedEntry.txt（清空）
+            committedFos = new FileOutputStream(Const.ROOT_PATH + "persistence/committedEntry.txt");
+            committedEntryWriter = new BufferedWriter(new OutputStreamWriter(committedFos, UTF_8));
         } catch (IOException e) {
-            LOGGER.error("generate snapshot error", e);
+            fatalError("Failed to generate snapshot or clear journal.", e);
         }
         writeCoveredIndex(Long.toString(committedIndex));
     }
@@ -136,16 +156,6 @@ public class LogService {
         return false;
     }
 
-    /**
-     * 提交所有未提交的日志
-     * <p>
-     * 当成功竞选为主后,发现还有未提交的日志,会执行这个方法
-     */
-    public static void commitAllUncommittedLog() {
-        while (!uncommittedEntries.isEmpty()) {
-            commitFirstUncommittedLog();
-        }
-    }
 
     /**
      * 获取已提交日志的index
@@ -154,16 +164,18 @@ public class LogService {
         return committedIndex;
     }
 
-
     /**
      * 更新当前raftnode的term
      */
     public static void updateCurrentTerm(String newTerm) {
-        try (BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(new FileOutputStream(Const.ROOT_PATH + "persistence/term.txt"))) {
-            bufferedOutputStream.write(newTerm.getBytes(UTF_8));
-            bufferedOutputStream.flush();
+        try (FileOutputStream fos = new FileOutputStream(Const.ROOT_PATH + "persistence/term.txt")) {
+            BufferedOutputStream bos = new BufferedOutputStream(fos);
+            bos.write(newTerm.getBytes(UTF_8));
+            bos.flush();
+            fos.getFD().sync();
+            bos.close();
         } catch (IOException e) {
-            updateCurrentTerm(newTerm);
+            fatalError("Failed to persist term to disk.", e);
         }
     }
 
@@ -180,17 +192,20 @@ public class LogService {
         }
     }
 
-
     /**
      * 清空未提交的日志记录
      */
     public static void clearUncommittedEntry() {
         try {
-            uncommittedEntryWriter = new BufferedWriter(new FileWriter(Const.ROOT_PATH + "persistence/uncommittedEntry.txt"));
+            // 关闭旧资源
+            uncommittedEntryWriter.close();
+            uncommittedFos.close();
+            // 重新以覆盖模式打开
+            uncommittedFos = new FileOutputStream(Const.ROOT_PATH + "persistence/uncommittedEntry.txt");
+            uncommittedEntryWriter = new BufferedWriter(new OutputStreamWriter(uncommittedFos, UTF_8));
             uncommittedEntries.clear();
         } catch (IOException e) {
-            LOGGER.error(e.getMessage(), e);
-            clearUncommittedEntry();
+            fatalError("Failed to clear uncommitted log file.", e);
         }
     }
 
@@ -200,7 +215,6 @@ public class LogService {
     public static int getUncommittedLogSize() {
         return uncommittedEntries.size();
     }
-
 
     /**
      * 获取保存未提交日志的文件的具体内容
@@ -248,12 +262,20 @@ public class LogService {
      */
     public static void syncUncommittedLog(String uncommittedLog) {
         try {
-            uncommittedEntryWriter = new BufferedWriter(new FileWriter(Const.ROOT_PATH + "persistence/uncommittedEntry.txt"));
+            // 关闭旧资源
+            uncommittedEntryWriter.close();
+            uncommittedFos.close();
+            // 重新以覆盖模式打开
+            uncommittedFos = new FileOutputStream(Const.ROOT_PATH + "persistence/uncommittedEntry.txt");
+            uncommittedEntryWriter = new BufferedWriter(new OutputStreamWriter(uncommittedFos, UTF_8));
             uncommittedEntryWriter.write(uncommittedLog);
+            uncommittedEntryWriter.flush();
+            uncommittedFos.getFD().sync();
+
             uncommittedEntries.clear();
             restoreUncommittedEntry();
         } catch (IOException e) {
-            LOGGER.error("write uncommitted log failed", e);
+            fatalError("Failed to sync uncommitted log.", e);
         }
     }
 
@@ -262,12 +284,20 @@ public class LogService {
      */
     public static void syncCommittedLog(String committedLog, String coveredIndex) {
         try {
-            committedEntryWriter = new BufferedWriter(new FileWriter(Const.ROOT_PATH + "persistence/committedEntry.txt"));
+            // 关闭旧资源
+            committedEntryWriter.close();
+            committedFos.close();
+            // 重新以覆盖模式打开
+            committedFos = new FileOutputStream(Const.ROOT_PATH + "persistence/committedEntry.txt");
+            committedEntryWriter = new BufferedWriter(new OutputStreamWriter(committedFos, UTF_8));
             committedEntryWriter.write(committedLog);
+            committedEntryWriter.flush();
+            committedFos.getFD().sync();
+
             writeCoveredIndex(coveredIndex);
             restoreCommittedIndex();
         } catch (IOException e) {
-            LOGGER.error("write uncommitted log failed", e);
+            fatalError("Failed to sync committed log.", e);
         }
     }
 
@@ -282,7 +312,6 @@ public class LogService {
             }
         }
     }
-
 
     /**
      * 删除第一行记录
@@ -304,7 +333,6 @@ public class LogService {
         return numMoved;
     }
 
-
     /**
      * 恢复已提交日志最后条的索引
      */
@@ -316,17 +344,16 @@ public class LogService {
         }
     }
 
-
     /**
      * 恢复状态机
      */
     private static void restoreStateMachine() {
         initDataOfRaftNode();
-        try (BufferedInputStream bufferedOutputStream = new BufferedInputStream(new FileInputStream(Const.ROOT_PATH + "persistence/snapshot.snp"));
+        try (BufferedInputStream bufferedInputStream = new BufferedInputStream(new FileInputStream(Const.ROOT_PATH + "persistence/snapshot.snp"));
              BufferedReader committedEntryReader = new BufferedReader(new FileReader(Const.ROOT_PATH + "persistence/committedEntry.txt"))) {
-            byte[] bytes = new byte[bufferedOutputStream.available()];
-            bufferedOutputStream.read(bytes);
-            if (bytes.length>0) {
+            byte[] bytes = new byte[bufferedInputStream.available()];
+            bufferedInputStream.read(bytes);
+            if (bytes.length > 0) {
                 RaftNode.data = (Map<String, Object>[]) DataSearialUtil.deserialize(bytes).getObject();
             }
             String command;
@@ -341,12 +368,11 @@ public class LogService {
     /**
      * 初始化状态机
      */
-    private static void initDataOfRaftNode(){
+    private static void initDataOfRaftNode() {
         RaftNode.data[0] = new HashMap<>();
         RaftNode.data[1] = new ConcurrentHashMap<>();
         RaftNode.data[2] = new ConcurrentHashMap<>();
     }
-
 
     /**
      * 执行写状态机的具体操作
@@ -447,11 +473,12 @@ public class LogService {
             committedEntryWriter.write(command);
             committedEntryWriter.newLine();
             committedEntryWriter.flush();
+            committedFos.getFD().sync();   // 强制落盘
             if (++committedIndex % SNAPSHOT_BATCH_COUNT == 0) {
                 generateSnapshotAndClearJournal(new Data(RaftNode.data));
             }
         } catch (IOException e) {
-            LOGGER.error("append committed log failed", e);
+            fatalError("Failed to append committed log.", e);
         }
     }
 
@@ -459,11 +486,14 @@ public class LogService {
      * 把快照包含的日志条目持久化到磁盘
      */
     private static void writeCoveredIndex(String coveredIndex) {
-        try (BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(Const.ROOT_PATH + "persistence/coveredindex.txt"))) {
-            bufferedWriter.write(coveredIndex);
-            bufferedWriter.flush();
+        try (FileOutputStream fos = new FileOutputStream(Const.ROOT_PATH + "persistence/coveredindex.txt")) {
+            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(fos, UTF_8));
+            writer.write(coveredIndex);
+            writer.flush();
+            fos.getFD().sync();   // 强制落盘
+            writer.close();
         } catch (IOException e) {
-            LOGGER.error("generate snapshot error", e);
+            fatalError("Failed to write covered index.", e);
         }
     }
 
@@ -473,14 +503,19 @@ public class LogService {
     public static String removeFirstUncommittedEntry() {
         try (BufferedReader bufferedReader = new BufferedReader(new FileReader(Const.ROOT_PATH + "persistence/uncommittedEntry.txt"))) {
             int num = removeTheFirstLine(BUFFER_FOR_UNCOMMITTED_ENTRY, bufferedReader.read(BUFFER_FOR_UNCOMMITTED_ENTRY));
-            uncommittedEntryWriter = new BufferedWriter(new FileWriter(Const.ROOT_PATH + "persistence/uncommittedEntry.txt"));
+            // 关闭旧资源
+            uncommittedEntryWriter.close();
+            uncommittedFos.close();
+            // 重新以覆盖模式打开
+            uncommittedFos = new FileOutputStream(Const.ROOT_PATH + "persistence/uncommittedEntry.txt");
+            uncommittedEntryWriter = new BufferedWriter(new OutputStreamWriter(uncommittedFos, UTF_8));
             uncommittedEntryWriter.write(BUFFER_FOR_UNCOMMITTED_ENTRY, 0, num);
             uncommittedEntryWriter.flush();
+            uncommittedFos.getFD().sync();   // 强制落盘
             return uncommittedEntries.poll();
         } catch (IOException e) {
-            LOGGER.error(e.getMessage(), e);
+            fatalError("Failed to remove first uncommitted entry.", e);
+            return null; // 实际不会执行到这里
         }
-        return null;
     }
-
 }
