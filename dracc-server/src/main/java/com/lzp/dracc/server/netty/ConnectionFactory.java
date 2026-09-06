@@ -26,7 +26,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 public class ConnectionFactory implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ConnectionFactory.class);
-    public static EventLoopGroup workerGroup = new NioEventLoopGroup(1);
+    public static EventLoopGroup workerGroup = new NioEventLoopGroup(RaftNode.HALF_COUNT * 2);
     private static Bootstrap bootstrap = new Bootstrap();
 
     static {
@@ -86,21 +86,24 @@ public class ConnectionFactory implements AutoCloseable {
      * @date: 2020/9/27 18:32
      */
     public static Channel newChannelAndAskForSync(String ip, int port, long term) {
-        try {
-            Channel channel = bootstrap.connect(ip, port).sync().channel();
-            channel.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + Const.RPC_SYNC_TERM +
-                    Const.COMMAND_SEPARATOR + RaftNode.term).getBytes(UTF_8));
-            return channel;
-        } catch (Exception e) {
-            if (Role.LEADER == RaftNode.getRole() && RaftNode.term == term) {
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ex) {
-                    LOGGER.error(e.getMessage(), e);
+        while (true) {
+            try {
+                Channel channel = bootstrap.connect(ip, port).sync().channel();
+                channel.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + Const.RPC_SYNC_TERM +
+                        Const.COMMAND_SEPARATOR + RaftNode.term).getBytes(UTF_8));
+                return channel;
+            } catch (Exception e) {
+                if (Role.LEADER == RaftNode.getRole() && RaftNode.term == term) {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ex) {
+                        LOGGER.error(e.getMessage(), e);
+                    }
+                    // 继续循环重试
+                } else {
+                    return null;
                 }
-                return newChannelAndAskForSync(ip, port, term);
             }
-            return null;
         }
     }
 

@@ -38,16 +38,16 @@ public class ClientTest {
         //事件监听
         draccClient.subscribe("serviceTest", instances -> System.out.println("监听到服务变动,变动后的服务实例列表为:" + instances));
         //检测服务健康检查
-        Thread.sleep(20000);
+        /*Thread.sleep(20000);
         System.out.println(draccClient.getConfig("aaa"));
         //由于注册的服务实例"125.2.0.1:8889"是乱写的,会被检测到不可达然后删除.
         System.out.println(draccClient.getAllInstances("serviceTest"));
-        draccClient.unsubscribe("serviceTest");
+        draccClient.unsubscribe("serviceTest");*/
 
         //lock
         //分布式锁测试应该用多台主机测试,我这里就开两个客户端模拟两台主机简单测试下
         ExecutorService threadPool = new ThreadPoolExecutor(2, 2, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
-        threadPool.execute(() -> {
+        /*threadPool.execute(() -> {
             DraccClient draccClient1 = null;
             try {
                 draccClient1 = new JDracc(3000, "127.0.0.1:6669", "127.0.0.1:6668", "127.0.0.1:6667");
@@ -82,20 +82,21 @@ public class ClientTest {
             System.out.println(Thread.currentThread().getName() + "释放分布式锁:" + LocalTime.now());
         });
         threadPool.shutdown();
-        threadPool.awaitTermination(10000, TimeUnit.SECONDS);
+        threadPool.awaitTermination(10000, TimeUnit.SECONDS);*/
 
         //性能测试
         //写配置性能
         //模拟开30个客户端并发写配置,每个客户端写1000条配置,测总共耗时(这里只是很简单地测试,并且也没有提前预热,但也可以看出大致的性能水平)
         System.out.println("开始性能测试");
-        threadPool = new ThreadPoolExecutor(30, 30, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        threadPool = new ThreadPoolExecutor(120, 120, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         long beginTime = System.currentTimeMillis();
-        for (int i = 0; i < 30; i++) {
+        for (int i = 0; i < 120; i++) {
+            int finalI = i;
             threadPool.execute(() -> {
                 String keyAndVal;
                 for (int j = 0; j < 1000; j++) {
                     try {
-                        draccClient.addConfig(keyAndVal = String.valueOf(j), keyAndVal);
+                        draccClient.addConfig(keyAndVal = String.valueOf(j), keyAndVal+ finalI+2);
                     } catch (DraccException ignored) {
                     }
                 }
@@ -104,12 +105,12 @@ public class ClientTest {
         threadPool.shutdown();
         threadPool.awaitTermination(10000, TimeUnit.SECONDS);
         long time = System.currentTimeMillis() - beginTime;
-        System.out.println("30个客户端并发写配置,TPS = " + (new BigDecimal(30000).divide(new BigDecimal(time)
+        System.out.println("120个客户端并发写配置,TPS = " + (new BigDecimal(120000).divide(new BigDecimal(time)
                 .divide(new BigDecimal(1000), 3, RoundingMode.CEILING), 3, RoundingMode.CEILING)));
         //读配置性能
-        threadPool = new ThreadPoolExecutor(30, 30, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
+        threadPool = new ThreadPoolExecutor(100, 100, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         beginTime = System.currentTimeMillis();
-        for (int i = 0; i < 30; i++) {
+        for (int i = 0; i < 100; i++) {
             threadPool.execute(() -> {
                 for (int j = 0; j < 1000; j++) {
                     try {
@@ -122,7 +123,7 @@ public class ClientTest {
         threadPool.shutdown();
         threadPool.awaitTermination(10000, TimeUnit.SECONDS);
         time = System.currentTimeMillis() - beginTime;
-        System.out.println("30个客户端并发读配置,QPS = " + (new BigDecimal(30000).divide(new BigDecimal(time)
+        System.out.println("100个客户端并发读配置,QPS = " + (new BigDecimal(100000).divide(new BigDecimal(time)
                 .divide(new BigDecimal(1000), 3, RoundingMode.CEILING), 3, RoundingMode.CEILING)));
     }
 }

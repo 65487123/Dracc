@@ -405,7 +405,10 @@ public class RaftNode {
         shutdownHeartbeatExecutor();
         CoreHandler.resetReplicationThreadPool();
         if (needClearUncommitLog) {
-            LogService.clearUncommittedEntry();
+            NettyServer.workerGroup.execute(() -> {
+                LogService.clearUncommittedEntry();
+                LogService.waitUntilAllLogWriteComplete();
+            });
         }
         timeoutToElectionExecutor.shutdownNow();
         setThreadPoolForPerformElectTasks();
@@ -467,9 +470,10 @@ public class RaftNode {
     /**
      * 全量同步(日志、状态机等),用作主从失连恢复后数据同步
      */
-    public static void fullSync(String committedLog, String uncommittedLog, byte[] dataObject, String coveredIndex) {
-        LogService.syncCommittedLog(committedLog, coveredIndex);
-        LogService.syncUncommittedLog(uncommittedLog);
+    public static void fullSync(byte[] committedBytes, byte[] uncommittedBytes, byte[] dataObject, String coveredIndex) {
+        LogService.syncCommittedLog(committedBytes, coveredIndex);
+        LogService.syncUncommittedLog(uncommittedBytes);
+        LogService.saveSnapshot(dataObject);
         data = (Map<String, Object>[]) DataSearialUtil.deserialize(dataObject).getObject();
     }
 
@@ -487,7 +491,7 @@ public class RaftNode {
      */
     public static void resetTimer() {
         ELECTION_TASK.deadline = System.currentTimeMillis() + ThreadLocalRandom.current()
-                .nextInt(19000, 57000);
+                .nextInt(9500, 28500);
     }
 
 

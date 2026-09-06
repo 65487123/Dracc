@@ -25,6 +25,8 @@ import com.lzp.dracc.server.util.DataSearialUtil;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 
+import java.util.Base64;
+
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 
@@ -57,18 +59,26 @@ public class ResultHandler extends SimpleChannelInboundHandler<byte[]> {
      * 把本节点状态(状态机、日志等)传到对端
      */
     private void sendOwnState(long remoteCommittedIndex, ChannelHandlerContext channelHandlerContext) {
+        LogService.waitUntilAllLogWriteComplete();
         if (LogService.getCommittedLogIndex() == remoteCommittedIndex) {
-            //说明状态机一样,只需要同步未提交日志就行
-            channelHandlerContext.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + "1" + Const
-                    .COMMAND_SEPARATOR + LogService.getFileContentOfUncommittedEntry()).getBytes(UTF_8));
+            // 增量同步：只同步未提交日志（Base64 编码避免分隔符冲突）
+            String uncommittedBase64 = Base64.getEncoder().encodeToString(LogService.getFileContentOfUncommittedEntry());
+            String msg = "x" + Const.COMMAND_SEPARATOR + "1" + Const.COMMAND_SEPARATOR + uncommittedBase64;
+            channelHandlerContext.writeAndFlush(msg.getBytes(UTF_8));
         } else {
-            //需要全量同步
-            channelHandlerContext.writeAndFlush(("x" + Const.COMMAND_SEPARATOR + "1" + Const
-                    .COMMAND_SEPARATOR + LogService.getFileContentOfCommittedEntry() + Const
-                    .COMMAND_SEPARATOR + LogService.getFileContentOfUncommittedEntry() + Const
-                    .COMMAND_SEPARATOR + new String(DataSearialUtil.serialize(new Data(RaftNode
-                    .data)), UTF_8) + Const.COMMAND_SEPARATOR + LogService.getCoveredIndex())
-                    .getBytes(UTF_8));
+            // 全量同步：已提交日志、未提交日志、状态机快照、coveredIndex 均需安全传输
+
+            String committedBase64 = Base64.getEncoder().encodeToString(LogService.getFileContentOfCommittedEntry());
+            String uncommittedBase64 = Base64.getEncoder().encodeToString(LogService.getFileContentOfUncommittedEntry());
+            String snapshotBase64 = Base64.getEncoder().encodeToString(LogService.getFileContentOfSnapshot());
+
+            String msg = "x" + Const.COMMAND_SEPARATOR + "0" + Const.COMMAND_SEPARATOR
+                    + committedBase64 + Const.COMMAND_SEPARATOR
+                    + uncommittedBase64 + Const.COMMAND_SEPARATOR
+                    + snapshotBase64 + Const.COMMAND_SEPARATOR
+                    + LogService.getCoveredIndex();
+
+            channelHandlerContext.writeAndFlush(msg.getBytes(UTF_8));
         }
     }
 }

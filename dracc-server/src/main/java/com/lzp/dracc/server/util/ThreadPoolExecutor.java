@@ -169,10 +169,8 @@ import java.util.concurrent.atomic.AtomicInteger;
              synchronized (WORKER_LIST) {
                  WORKER_LIST.remove(this);
              }
-             //判断是否是调用了shutdownNow()方法而导致的线程中断
              if (!shutdownNow) {
                  Thread.UncaughtExceptionHandler uncaughtExceptionHandler;
-                 //如果execute的任务抛出了未捕捉的异常，可以通过线程工厂创建线程的时候设置UncaughtExceptionHandler来捕捉
                  if ((uncaughtExceptionHandler = this.thread.getUncaughtExceptionHandler()) != null) {
                      uncaughtExceptionHandler.uncaughtException(this.thread, t);
                  }
@@ -184,8 +182,18 @@ import java.util.concurrent.atomic.AtomicInteger;
                      while (!shutdownNow) {
                          try {
                              if ((firstTask = blockingQueue.poll(5, TimeUnit.SECONDS)) != null) {
-                                 addWorker(firstTask, false);
-                                 break;
+                                 try {
+                                     addWorker(firstTask, false);
+                                     break;
+                                 } catch (Throwable e) {
+                                     // 创建 Worker 失败，放回任务并稍后重试
+                                     blockingQueue.offer(firstTask);
+                                     try {
+                                         Thread.sleep(50);
+                                     } catch (InterruptedException ignored) {
+                                         Thread.currentThread().interrupt();
+                                     }
+                                 }
                              }
                          } catch (InterruptedException ignored) {
                          }
@@ -290,7 +298,9 @@ import java.util.concurrent.atomic.AtomicInteger;
          } else {
              //核心线程数满了,队列也满了,判断线程数是否已经达到最大线程数
              if (additionThreadMax) {
-                 rejectedExecutionHandler.rejectedExecution(command, this);
+                 if (!blockingQueue.offer(command)) {
+                     rejectedExecutionHandler.rejectedExecution(command, this);
+                 }
              } else {
                  //没达到最大线程数,进行cas,然后看是否抢到创建额外线程的权利
                  if (workerSum.getAndIncrement() >= MAX_NUM) {
@@ -415,7 +425,6 @@ import java.util.concurrent.atomic.AtomicInteger;
                  newThreadToTerminate(this);
              } else if (!blockingQueue.offer(executorService::stop)) {
                  if (blockingQueue.isEmpty()) {
-                     //大概率是队列重写了offer方法
                      newThreadToTerminate(this);
                  } else {
                      while (!blockingQueue.offer(executorService::stop)) {
@@ -423,6 +432,14 @@ import java.util.concurrent.atomic.AtomicInteger;
                              Thread.sleep(1);
                          } catch (InterruptedException ignored) {
                          }
+                     }
+                 }
+             }
+             synchronized (WORKER_LIST) {
+                 if (WORKER_LIST.isEmpty()) {
+                     this.shutdownNow = true;
+                     synchronized (this) {
+                         this.notifyAll();
                      }
                  }
              }

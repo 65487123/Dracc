@@ -61,7 +61,9 @@ package com.lzp.dracc.server.netty;
                  ctx.channel().close();
              } else if (e.state() == IdleState.WRITER_IDLE) {
                  // 写空闲，发送心跳包
-                 ctx.channel().writeAndFlush(new byte[0]);
+                 if (Role.LEADER == RaftNode.getRole()) {
+                     ctx.channel().writeAndFlush(new byte[0]);
+                 }
              }
          }
      }
